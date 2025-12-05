@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Team } from '@/types/draw';
 import { TEAMS } from '@/lib/data/teams';
+import { resolvePath } from '@/lib/utils';
 
 export function DrawVisualizer() {
   const { 
@@ -47,7 +48,7 @@ export function DrawVisualizer() {
   const renderFlag = (team: Team) => {
     if (team.flagUrl) {
         return (
-            <img src={team.flagUrl} alt={team.name} className="w-6 h-4 object-cover rounded-sm shadow-sm" />
+            <img src={resolvePath(team.flagUrl)} alt={team.name} className="w-6 h-4 object-cover rounded-sm shadow-sm" />
         );
     }
     

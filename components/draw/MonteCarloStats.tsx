@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { runMonteCarlo, SimulationResult } from '@/lib/engine/monte-carlo';
 import { TEAMS } from '@/lib/data/teams';
 import { getStadiumsForPosition } from '@/lib/data/matches';
+import { resolvePath } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { GROUP_NAMES, APPENDIX_B_POSITIONS } from '@/types/draw';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -155,7 +156,7 @@ export function MonteCarloStats() {
                       <tr key={team.id} className="hover:bg-muted/50">
                         <td className="p-3 sticky left-0 bg-background z-10 font-medium border-r">
                             <div className="flex items-center gap-2 min-w-[140px]">
-                                <img src={team.flagUrl} alt={team.id} className="w-5 h-3 object-cover border" />
+                                <img src={resolvePath(team.flagUrl)} alt={team.id} className="w-5 h-3 object-cover border" />
                                 <span className="truncate">{team.name}</span>
                             </div>
                         </td>
@@ -204,7 +205,7 @@ export function MonteCarloStats() {
                                 {TEAMS.map(t => (
                                     <SelectItem key={t.id} value={t.id}>
                                         <div className="flex items-center gap-2">
-                                            <img src={t.flagUrl} className="w-4 h-3" />
+                                            <img src={resolvePath(t.flagUrl)} className="w-4 h-3" />
                                             <span>{t.name}</span> 
                                             <span className="text-muted-foreground text-xs">(Pot {t.pot})</span>
                                         </div>
@@ -223,7 +224,7 @@ export function MonteCarloStats() {
                                 <div className="h-8 w-[1px] bg-border" />
                                 <div className="flex flex-col">
                                     <div className="flex items-center gap-2 font-medium">
-                                        <img src={opp.flagUrl} className="w-4 h-3 object-cover" />
+                                        <img src={resolvePath(opp.flagUrl)} className="w-4 h-3 object-cover" />
                                         {opp.name}
                                     </div>
                                     <span className="text-xs text-muted-foreground">
@@ -262,7 +263,7 @@ export function MonteCarloStats() {
                                 {TEAMS.map(t => (
                                     <SelectItem key={t.id} value={t.id}>
                                         <div className="flex items-center gap-2">
-                                            <img src={t.flagUrl} className="w-4 h-3" />
+                                            <img src={resolvePath(t.flagUrl)} className="w-4 h-3" />
                                             <span>{t.name}</span> 
                                             <span className="text-muted-foreground text-xs">(Pot {t.pot})</span>
                                         </div>
