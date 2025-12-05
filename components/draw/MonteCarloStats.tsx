@@ -15,7 +15,7 @@ import { Progress } from '@/components/ui/progress'; // Assuming this exists, if
 export function MonteCarloStats() {
   const [stats, setStats] = useState<SimulationResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [iterations, setIterations] = useState(1000);
+  const [iterations, setIterations] = useState(100000);
   const [selectedTeamId, setSelectedTeamId] = useState<string>(TEAMS[0].id);
 
   const handleRun = async () => {
