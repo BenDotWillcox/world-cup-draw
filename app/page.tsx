@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DrawVisualizer } from "@/components/draw/DrawVisualizer";
 import { MonteCarloStats } from "@/components/draw/MonteCarloStats";
+import { DrawProvider } from "@/components/draw/DrawContext";
 
 export default function Home() {
   return (
@@ -15,20 +16,22 @@ export default function Home() {
           </p>
         </div>
 
-        <Tabs defaultValue="visualizer" className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="visualizer">Visual Draw</TabsTrigger>
-            <TabsTrigger value="stats">Monte Carlo Stats</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="visualizer" className="mt-6">
-            <DrawVisualizer />
-          </TabsContent>
-          
-          <TabsContent value="stats" className="mt-6">
-            <MonteCarloStats />
-          </TabsContent>
-        </Tabs>
+        <DrawProvider>
+          <Tabs defaultValue="visualizer" className="w-full">
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="visualizer">Visual Draw</TabsTrigger>
+              <TabsTrigger value="stats">Monte Carlo Stats</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="visualizer" className="mt-6">
+              <DrawVisualizer />
+            </TabsContent>
+            
+            <TabsContent value="stats" className="mt-6">
+              <MonteCarloStats />
+            </TabsContent>
+          </Tabs>
+        </DrawProvider>
       </main>
     </div>
   );

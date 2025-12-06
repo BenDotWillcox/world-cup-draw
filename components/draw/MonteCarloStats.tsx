@@ -10,7 +10,6 @@ import { GROUP_NAMES, APPENDIX_B_POSITIONS } from '@/types/draw';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress'; // Assuming this exists, if not I'll use a simple div
 
 export function MonteCarloStats() {
   const [stats, setStats] = useState<SimulationResult | null>(null);
@@ -20,7 +19,6 @@ export function MonteCarloStats() {
 
   const handleRun = async () => {
     setLoading(true);
-    // Small timeout to allow UI to update before heavy calculation (if we were on main thread, but runMonteCarlo chunks it)
     setTimeout(async () => {
         const result = await runMonteCarlo(iterations);
         setStats(result);
@@ -40,7 +38,6 @@ export function MonteCarloStats() {
     return (count / iterations) * 100;
   };
 
-  // Sort opponents for the selected team
   const sortedOpponents = useMemo(() => {
     if (!stats || !selectedTeamId) return [];
     
@@ -50,7 +47,7 @@ export function MonteCarloStats() {
         ...opponent,
         probability: getOpponentProbability(selectedTeamId, opponent.id)
       }))
-      .filter(o => o.probability > 0) // Only show non-zero chances
+      .filter(o => o.probability > 0) 
       .sort((a, b) => b.probability - a.probability);
   }, [stats, selectedTeamId, iterations]);
 
@@ -64,11 +61,9 @@ export function MonteCarloStats() {
     const stadiumProbs: Record<string, number> = {};
 
     GROUP_NAMES.forEach((groupName, idx) => {
-        // Probability of being in this group
         const count = stats.groupProbabilities[selectedTeamId]?.[groupName] || 0;
         if (count === 0) return;
 
-        // Determine position
         let pos = 1;
         if (pot === 1) pos = 1;
         else {
@@ -150,7 +145,7 @@ export function MonteCarloStats() {
                 </thead>
                 <tbody className="divide-y">
                   {TEAMS.map((team) => {
-                    const pot = team.pot; // Use actual pot from data
+                    const pot = team.pot; 
                     
                     return (
                       <tr key={team.id} className="hover:bg-muted/50">
@@ -163,7 +158,6 @@ export function MonteCarloStats() {
                         <td className="p-3 text-muted-foreground w-12 text-center">{pot}</td>
                         {GROUP_NAMES.map(g => {
                           const prob = getGroupProbability(team.id, g);
-                          // Heatmap coloring
                           let bgClass = "";
                           if (prob > 25) bgClass = "bg-blue-600 text-white dark:bg-blue-700";
                           else if (prob > 15) bgClass = "bg-blue-500/50 text-blue-900 dark:text-blue-100";

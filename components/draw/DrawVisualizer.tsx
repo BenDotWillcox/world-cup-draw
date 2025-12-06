@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useDrawSimulation } from '@/hooks/use-draw-simulation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Team } from '@/types/draw';
 import { TEAMS } from '@/lib/data/teams';
 import { resolvePath } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { X } from 'lucide-react';
 
 export function DrawVisualizer() {
   const { 
@@ -19,14 +21,17 @@ export function DrawVisualizer() {
     isRunning,
     currentPot,
     scanningGroupIndex,
-    scanningStatus
+    scanningStatus,
+    calculateValidGroups,
+    placeTeam,
+    removeTeam
   } = useDrawSimulation();
 
+  const [draggingTeam, setDraggingTeam] = useState<Team | null>(null);
+  const [validTargetIndices, setValidTargetIndices] = useState<number[]>([]);
+
   // We start with all TEAMS.
-  // Filter out hosts (they are pre-placed).
-  // Filter out teams that are in the `groups` state? 
-  // Actually, useDrawSimulation now manages `availableTeams` internally, 
-  // but for the Pot display, we want to show teams that are NOT yet in a group.
+  // Filter out teams that are in the `groups` state.
   const drawnTeamIds = useMemo(() => {
     const ids = new Set<string>();
     groups.forEach(g => {
@@ -63,38 +68,52 @@ export function DrawVisualizer() {
     return <div className="w-3 h-3 bg-gray-500 rounded-full mx-1.5"></div>;
   };
 
-  return (
-    <div className="space-y-6 w-full">
-       {/* Pots Display (4 columns) - Moved Above Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map(potNum => {
-                const potTeams = TEAMS.filter(t => t.pot === potNum && !drawnTeamIds.has(t.id));
-                return (
-                    <div key={potNum} className="border rounded-xl p-4 bg-card/50">
-                        <div className="text-center mb-3 font-semibold text-muted-foreground">Pot {potNum}</div>
-                        <div className="space-y-1.5">
-                            {potTeams.length > 0 ? potTeams.map(team => (
-                            <div key={team.id} className="flex items-center gap-3 p-2 rounded-md bg-background/50 border border-border/50 text-sm shadow-sm">
-                                <div className="flex-shrink-0">
-                                    {renderFlag(team)}
-                                </div>
-                                <span className={`font-medium truncate ${isPlaceholder(team) ? 'text-muted-foreground' : ''}`}>
-                                    {team.name}
-                                </span>
-                            </div>
-                            )) : (
-                                <div className="text-center py-4 text-xs text-muted-foreground italic opacity-50">
-                                    Empty
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
+  const handleDragStart = (e: React.DragEvent, team: Team) => {
+    if (!isRunning) {
+        e.preventDefault();
+        return;
+    }
+    // Only allow dragging from current pot
+    if (team.pot !== currentPot) {
+        e.preventDefault();
+        return;
+    }
 
+    setDraggingTeam(team);
+    const valid = calculateValidGroups(team);
+    setValidTargetIndices(valid);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragEnd = () => {
+    setDraggingTeam(null);
+    setValidTargetIndices([]);
+  };
+
+  const handleDragOver = (e: React.DragEvent, groupIndex: number) => {
+    e.preventDefault();
+    if (draggingTeam && validTargetIndices.includes(groupIndex)) {
+        e.dataTransfer.dropEffect = "move";
+    } else {
+        e.dataTransfer.dropEffect = "none";
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, groupIndex: number) => {
+    e.preventDefault();
+    if (draggingTeam && validTargetIndices.includes(groupIndex)) {
+        placeTeam(draggingTeam, groupIndex);
+        // Immediately clear drag state to remove highlighting
+        setDraggingTeam(null);
+        setValidTargetIndices([]);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6 w-full max-w-[1800px] mx-auto pb-12">
+      
       {/* Header & Controls */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-card p-4 rounded-lg border shadow-sm min-h-[120px]">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-card p-4 rounded-lg border shadow-sm">
         <div className="space-y-1 w-full md:w-1/3">
             <h2 className="text-2xl font-bold">Draw Simulator</h2>
             <p className="text-muted-foreground text-sm">
@@ -104,23 +123,23 @@ export function DrawVisualizer() {
             </p>
         </div>
 
-        {/* Center: Just Drawn Team */}
-        <div className="w-full md:w-1/3 flex justify-center items-center">
+        {/* Center: Just Drawn Team (Auto-draw visualization) */}
+        <div className="w-full md:w-1/3 flex justify-center items-center h-16">
             {currentTeam ? (
                 <div className="animate-in fade-in zoom-in duration-300 w-full max-w-[240px]">
-                     <div className="bg-primary text-primary-foreground rounded-xl p-3 flex items-center justify-center shadow-lg gap-4">
-                         <div className="transform scale-125">
+                     <div className="bg-primary text-primary-foreground rounded-xl p-2 flex items-center justify-center shadow-lg gap-3">
+                         <div className="transform scale-110">
                             {renderFlag(currentTeam)}
                          </div>
                          <div className="text-center">
-                            <div className="text-lg font-bold leading-tight">{currentTeam.name}</div>
-                            <div className="text-xs opacity-80">{currentTeam.confederation}</div>
+                            <div className="text-base font-bold leading-tight">{currentTeam.name}</div>
+                            <div className="text-[10px] opacity-80">{currentTeam.confederation}</div>
                          </div>
                      </div>
                 </div>
             ) : (
-                <div className="text-muted-foreground/20 text-sm font-medium uppercase tracking-widest select-none">
-                    Waiting for Draw
+                <div className="text-muted-foreground/20 text-xs font-medium uppercase tracking-widest select-none">
+                    {draggingTeam ? "Drop to Place" : "Waiting for Draw"}
                 </div>
             )}
         </div>
@@ -130,82 +149,175 @@ export function DrawVisualizer() {
             <Button onClick={startDraw}>Start Simulation</Button>
           ) : (
             <>
-                <Button onClick={nextStep} disabled={!!currentTeam}>
-                    {currentPot > 1 && TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length === 0 
-                        ? "Advance to Next Pot" 
-                        : "Draw Next Ball"}
-                </Button>
+                {/* Only show Draw/Advance button if not finished with Pot 4 */}
+                {(currentPot < 4 || TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length > 0) && (
+                    <Button onClick={nextStep} disabled={!!currentTeam || !!draggingTeam}>
+                        {currentPot > 1 && TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length === 0 
+                            ? "Advance to Next Pot" 
+                            : "Draw Next Ball"}
+                    </Button>
+                )}
+                
+                {/* If finished with Pot 4, show a status or just the Restart button */}
+                {currentPot === 4 && TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length === 0 && (
+                     <div className="text-sm font-medium text-muted-foreground mr-2">Draw Complete</div>
+                )}
+
                 <Button variant="destructive" onClick={reset}>Restart</Button>
             </>
           )}
         </div>
       </div>
 
-      {/* Groups Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {groups.map((group, groupIndex) => {
-          // Sort teams by Pot for display (1, 2, 3, 4)
-          const teamsByPot: (Team | null)[] = [1, 2, 3, 4].map(potNum => 
-             group.teams.find(t => t?.pot === potNum) || null
-          );
-
-          return (
-            <Card key={group.name} className="overflow-hidden">
-              <CardHeader className="bg-muted/50 py-0 px-1 border-b min-h-0 h-6 flex items-center justify-center">
-                  <span className="w-full text-center block text-xs font-medium text-foreground/80">Group {group.name}</span>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="divide-y">
-                  {teamsByPot.map((team, idx) => {
-                    let displayTeam = team;
-                    let rowClass = "";
-                    
-                    // Handle scanning visualization
-                    if (scanningGroupIndex === groupIndex && currentTeam && scanningStatus) {
-                        const potNum = currentTeam.pot || 1;
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        
+        {/* LEFT SIDEBAR: Active Pot */}
+        {(currentPot < 4 || TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length > 0) ? (
+            <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 sticky top-4 z-20">
+                {isRunning ? (
+                    <div className="border rounded-xl p-4 bg-card shadow-md ring-2 ring-primary/10">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-lg">Pot {currentPot}</h3>
+                            <Badge variant="secondary">Active</Badge>
+                        </div>
                         
-                        // SIMPLIFIED: Target the row corresponding to the Pot Number.
-                        // Since this list is generated by mapping [1,2,3,4], index 0 is Pot 1, index 1 is Pot 2, etc.
-                        const targetSlot = potNum - 1;
+                        <div className="space-y-2 max-h-[calc(100vh-140px)] overflow-y-auto pr-1">
+                             {TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length > 0 ? (
+                                 TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).map(team => (
+                                    <div 
+                                        key={team.id} 
+                                        draggable={true}
+                                        onDragStart={(e) => handleDragStart(e, team)}
+                                        onDragEnd={handleDragEnd}
+                                        className={cn(
+                                            "flex items-center gap-3 p-3 rounded-lg bg-background border hover:border-primary/50 cursor-grab active:cursor-grabbing transition-all shadow-sm",
+                                            draggingTeam?.id === team.id && "opacity-40 scale-95"
+                                        )}
+                                    >
+                                        <div className="flex-shrink-0 transform scale-125">
+                                            {renderFlag(team)}
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className={`font-bold text-sm truncate ${isPlaceholder(team) ? 'text-muted-foreground' : ''}`}>
+                                                {team.name}
+                                            </span>
+                                            <span className="text-[10px] text-muted-foreground">{team.confederation}</span>
+                                        </div>
+                                    </div>
+                                 ))
+                             ) : (
+                                 <div className="text-center py-8 text-sm text-muted-foreground italic bg-muted/30 rounded-lg">
+                                     Pot Empty
+                                 </div>
+                             )}
+                        </div>
+                    </div>
+                ) : (
+                    // Show condensed view of all pots when not running
+                    <div className="space-y-4 opacity-60">
+                         {[1, 2, 3, 4].map(potNum => (
+                            <div key={potNum} className="border rounded-lg p-3 bg-card/50">
+                                <div className="text-sm font-medium text-muted-foreground">Pot {potNum}</div>
+                                <div className="text-xs text-muted-foreground/50 mt-1">
+                                    {TEAMS.filter(t => t.pot === potNum).length} teams
+                                </div>
+                            </div>
+                         ))}
+                    </div>
+                )}
+            </div>
+        ) : null}
 
-                        if (idx === targetSlot) {
-                            if (scanningStatus === 'rejected') {
-                                rowClass = "bg-red-500/20";
-                                if (!displayTeam) displayTeam = currentTeam;
-                            } else if (scanningStatus === 'found') {
-                                rowClass = "bg-green-500/20";
-                                displayTeam = currentTeam;
+        {/* RIGHT CONTENT: Groups Grid */}
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+            {groups.map((group, groupIndex) => {
+            const teamsByPot: (Team | null)[] = [1, 2, 3, 4].map(potNum => 
+                group.teams.find(t => t?.pot === potNum) || null
+            );
+
+            const isValidTarget = draggingTeam && validTargetIndices.includes(groupIndex);
+            
+            return (
+                <Card 
+                    key={group.name} 
+                    onDragOver={(e) => handleDragOver(e, groupIndex)}
+                    onDrop={(e) => handleDrop(e, groupIndex)}
+                    className={cn(
+                        "overflow-hidden transition-all duration-200",
+                        isValidTarget ? "ring-4 ring-green-500 shadow-xl scale-[1.02] z-10" : "",
+                        draggingTeam && !isValidTarget && "opacity-50 grayscale-[0.5]" 
+                    )}
+                >
+                <CardHeader className="bg-muted/50 py-2 px-3 border-b flex flex-row items-center justify-between space-y-0">
+                    <span className="font-bold text-sm">Group {group.name}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        {group.teams.filter(t => t).length}/4
+                    </span>
+                </CardHeader>
+                <CardContent className="p-0">
+                    <div className="divide-y">
+                    {teamsByPot.map((team, idx) => {
+                        let displayTeam = team;
+                        let rowClass = "";
+                        
+                        // Handle scanning visualization
+                        if (scanningGroupIndex === groupIndex && currentTeam && scanningStatus) {
+                            const potNum = currentTeam.pot || 1;
+                            const targetSlot = potNum - 1;
+
+                            if (idx === targetSlot) {
+                                if (scanningStatus === 'rejected') {
+                                    rowClass = "bg-red-500/20";
+                                    if (!displayTeam) displayTeam = currentTeam;
+                                } else if (scanningStatus === 'found') {
+                                    rowClass = "bg-green-500/20";
+                                    displayTeam = currentTeam;
+                                }
                             }
                         }
-                    }
 
-                    return (
-                    <div key={idx} className={`flex items-center justify-between p-2 h-10 text-xs transition-colors duration-200 ${rowClass}`}>
-                      <span className="text-muted-foreground w-4 font-mono text-[10px]">
-                        {/* Display Pot Number as the "slot" indicator if desired, or just rank/index */}
-                        {idx + 1}
-                      </span>
-                      {displayTeam ? (
-                        <div className="flex-1 flex items-center gap-2 min-w-0">
-                          {renderFlag(displayTeam)}
-                          <div className="flex flex-col leading-none min-w-0">
-                             <span className="font-medium truncate">{displayTeam.name}</span>
-                             <span className="text-[9px] text-muted-foreground mt-0.5">{displayTeam.confederation}</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground/30 italic">
-                            {/* Empty Pot Slot */}
+                        // Determine if this team can be removed (simulation is running)
+                        const canRemove = isRunning && displayTeam;
+
+                        return (
+                        <div key={idx} className={`flex items-center justify-between p-3 h-12 text-xs transition-colors duration-200 ${rowClass} group/item`}>
+                        <span className="text-muted-foreground w-6 font-mono text-[10px] text-center border-r mr-3">
+                            {idx + 1}
                         </span>
-                      )}
+                        {displayTeam ? (
+                            <div className="flex-1 flex items-center gap-3 min-w-0">
+                                <div className="scale-125 origin-left">
+                                    {renderFlag(displayTeam)}
+                                </div>
+                                <div className="flex flex-col leading-none min-w-0">
+                                    <span className="font-bold text-sm truncate">{displayTeam.name}</span>
+                                    <span className="text-[10px] text-muted-foreground mt-0.5">{displayTeam.confederation}</span>
+                                </div>
+                                {canRemove && (
+                                    <button
+                                        onClick={() => removeTeam(displayTeam!, groupIndex)}
+                                        className="ml-auto opacity-0 group-hover/item:opacity-100 hover:bg-red-100 p-1 rounded-full transition-all text-red-500"
+                                        title="Return to Pot"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
+                            <span className="text-muted-foreground/20 italic text-[10px] flex-1">
+                                Empty
+                            </span>
+                        )}
+                        </div>
+                    );
+                    })}
                     </div>
-                  );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                </CardContent>
+                </Card>
+            );
+            })}
+        </div>
+
       </div>
     </div>
   );
