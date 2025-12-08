@@ -228,6 +228,8 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
       // Revert Pot Logic
       if ((team.pot ?? 1) < currentPot) {
           setCurrentPot((team.pot ?? 1) as 1|2|3|4);
+          setIsRunning(true);
+          isRunningRef.current = true;
           
           // We need to find all unassigned teams for this "old" pot to properly populate availableTeams
           // We use the current 'groups' state, but treating the team we just removed as definitely unassigned
@@ -246,11 +248,14 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
           
           setAvailableTeams(unassignedFromTargetPot);
       } else {
-          // Same pot (or future pot? shouldn't happen given UI constraints usually, but standard add back)
-          setAvailableTeams(prev => {
-             if (prev.find(t => t.id === team.id)) return prev;
-             return [...prev, team];
-          });
+          // Only add back to available teams if it belongs to the CURRENT pot.
+          // If it belongs to a future pot, it will be picked up when we advance to that pot.
+          if ((team.pot ?? 1) === currentPot) {
+              setAvailableTeams(prev => {
+                 if (prev.find(t => t.id === team.id)) return prev;
+                 return [...prev, team];
+              });
+          }
       }
 
   }, [currentPot, groups]);
@@ -462,5 +467,3 @@ export const useDrawSimulation = () => {
   }
   return context;
 };
-
-
