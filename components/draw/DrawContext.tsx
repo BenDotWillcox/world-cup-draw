@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { Team, Group, APPENDIX_B_POSITIONS } from '@/types/draw';
 import { initializeGroups, canPlaceTeamInGroup, canPlaceTeamInPot1, validateConstraintCounts, completeCurrentDraw } from '@/lib/engine/draw-logic';
 import { TEAMS } from '@/lib/data/teams';
+import { OFFICIAL_GROUPS } from '@/lib/data/official-draw';
 
 export type DrawStep = {
   team: Team;
@@ -30,6 +31,8 @@ interface DrawContextType {
   steps: DrawStep[];
   fastForward: () => void;
   isFastForwarding: boolean;
+  isOfficialDraw: boolean;
+  loadOfficialDraw: () => void;
 }
 
 const DrawContext = createContext<DrawContextType | undefined>(undefined);
@@ -54,6 +57,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
   const [scanningStatus, setScanningStatus] = useState<'scanning' | 'found' | 'rejected' | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isFastForwarding, setIsFastForwarding] = useState(false);
+  const [isOfficialDraw, setIsOfficialDraw] = useState(false);
   const isProcessingRef = useRef(false);
   const isRunningRef = useRef(isRunning);
 
@@ -74,6 +78,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     setScanningGroupIndex(null);
     setScanningStatus(null);
     setCurrentTeam(null);
+    setIsOfficialDraw(false);
     isProcessingRef.current = false;
     isRunningRef.current = true;
 
@@ -87,6 +92,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     setScanningGroupIndex(null);
     setScanningStatus(null);
     setCurrentTeam(null);
+    setIsOfficialDraw(false);
     isProcessingRef.current = false;
     isRunningRef.current = false;
     
@@ -102,6 +108,28 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     
     setCurrentPot(1);
     setAvailableTeams([]); 
+  }, []);
+
+  const loadOfficialDraw = useCallback(() => {
+    setIsRunning(false);
+    isRunningRef.current = false;
+    isProcessingRef.current = false;
+    setScanningGroupIndex(null);
+    setScanningStatus(null);
+    setCurrentTeam(null);
+    
+    // Load Official Groups
+    // We need to deep copy to avoid mutating the constant
+    const official = OFFICIAL_GROUPS.map(g => ({
+        ...g,
+        teams: [...g.teams]
+    }));
+    setGroups(official);
+    
+    // Set state to finished
+    setCurrentPot(4);
+    setAvailableTeams([]);
+    setIsOfficialDraw(true);
   }, []);
 
   const advancePot = useCallback(() => {
@@ -201,6 +229,8 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
           isProcessingRef.current = false;
       }
       
+      setIsOfficialDraw(false);
+      
   }, [currentPot, currentTeam]);
 
   const removeTeam = useCallback((team: Team, groupIndex: number) => {
@@ -224,6 +254,8 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
           newGroups[groupIndex].teams[targetPositionIndex] = null;
           return newGroups;
       });
+      
+      setIsOfficialDraw(false);
 
       // Revert Pot Logic
       if ((team.pot ?? 1) < currentPot) {
@@ -454,7 +486,9 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     removeTeam,
     steps: [],
     fastForward,
-    isFastForwarding
+    isFastForwarding,
+    isOfficialDraw,
+    loadOfficialDraw
   };
 
   return <DrawContext.Provider value={value}>{children}</DrawContext.Provider>;

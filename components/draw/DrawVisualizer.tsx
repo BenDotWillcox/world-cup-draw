@@ -5,6 +5,8 @@ import { useDrawSimulation } from '@/hooks/use-draw-simulation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Team } from '@/types/draw';
 import { TEAMS } from '@/lib/data/teams';
 import { resolvePath } from '@/lib/utils';
@@ -26,7 +28,9 @@ export function DrawVisualizer() {
     placeTeam,
     removeTeam,
     fastForward,
-    isFastForwarding
+    isFastForwarding,
+    isOfficialDraw,
+    loadOfficialDraw
   } = useDrawSimulation();
 
   const [draggingTeam, setDraggingTeam] = useState<Team | null>(null);
@@ -147,8 +151,31 @@ export function DrawVisualizer() {
         </div>
         
         <div className="flex items-center gap-2 w-full md:w-1/3 justify-end">
-          {!isRunning ? (
+          
+          {/* Official Draw Checkbox */}
+          {!isRunning && (
+            <div className="flex items-center space-x-2 mr-4">
+                <Checkbox 
+                    id="official-draw" 
+                    checked={isOfficialDraw}
+                    onCheckedChange={(checked) => {
+                        if (checked) loadOfficialDraw();
+                        else reset();
+                    }}
+                />
+                <Label 
+                    htmlFor="official-draw" 
+                    className="text-sm font-medium leading-none cursor-pointer"
+                >
+                    Use official draw
+                </Label>
+            </div>
+          )}
+
+          {!isRunning && !isOfficialDraw ? (
             <Button onClick={startDraw}>Start Simulation</Button>
+          ) : isOfficialDraw ? (
+             <Button variant="outline" onClick={reset}>Reset</Button>
           ) : (
             <>
                 {/* Only show Draw/Advance button if not finished with Pot 4 */}
@@ -189,7 +216,7 @@ export function DrawVisualizer() {
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         
         {/* LEFT SIDEBAR: Active Pot */}
-        {(currentPot < 4 || TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length > 0) ? (
+        {(currentPot < 4 || TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length > 0) && !isOfficialDraw ? (
             <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 sticky top-4 z-20">
                 {isRunning ? (
                     <div className="border rounded-xl p-4 bg-card shadow-md ring-2 ring-primary/10">
