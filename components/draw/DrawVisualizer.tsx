@@ -9,7 +9,7 @@ import { Team } from '@/types/draw';
 import { TEAMS } from '@/lib/data/teams';
 import { resolvePath } from '@/lib/utils';
 import { cn } from '@/lib/utils';
-import { X } from 'lucide-react';
+import { X, ChevronsRight, Loader2 } from 'lucide-react';
 
 export function DrawVisualizer() {
   const { 
@@ -24,7 +24,9 @@ export function DrawVisualizer() {
     scanningStatus,
     calculateValidGroups,
     placeTeam,
-    removeTeam
+    removeTeam,
+    fastForward,
+    isFastForwarding
   } = useDrawSimulation();
 
   const [draggingTeam, setDraggingTeam] = useState<Team | null>(null);
@@ -151,11 +153,26 @@ export function DrawVisualizer() {
             <>
                 {/* Only show Draw/Advance button if not finished with Pot 4 */}
                 {(currentPot < 4 || TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length > 0) && (
-                    <Button onClick={nextStep} disabled={!!currentTeam || !!draggingTeam}>
-                        {currentPot > 1 && TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length === 0 
-                            ? "Advance to Next Pot" 
-                            : "Draw Next Ball"}
-                    </Button>
+                    <>
+                        <Button onClick={nextStep} disabled={!!currentTeam || !!draggingTeam}>
+                            {currentPot > 1 && TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length === 0 
+                                ? "Advance to Next Pot" 
+                                : "Draw Next Ball"}
+                        </Button>
+                        <Button 
+                            variant="secondary" 
+                            onClick={fastForward} 
+                            disabled={!!currentTeam || !!draggingTeam || isFastForwarding}
+                            title="Instantly complete the rest of the draw"
+                        >
+                            {isFastForwarding ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                                <ChevronsRight className="w-4 h-4 mr-2" />
+                            )}
+                            {isFastForwarding ? "Simulating..." : "Fast Forward"}
+                        </Button>
+                    </>
                 )}
                 
                 {/* If finished with Pot 4, show a status or just the Restart button */}

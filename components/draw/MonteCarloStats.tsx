@@ -1,45 +1,34 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { runMonteCarlo, SimulationResult } from '@/lib/engine/monte-carlo';
+import precomputedStats from '@/lib/data/monte-carlo-results.json';
+import { SimulationResult } from '@/lib/engine/monte-carlo';
 import { TEAMS } from '@/lib/data/teams';
 import { getStadiumsForPosition } from '@/lib/data/matches';
 import { resolvePath } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { GROUP_NAMES, APPENDIX_B_POSITIONS } from '@/types/draw';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
+const stats = precomputedStats as unknown as SimulationResult;
+const ITERATIONS = 1000000;
+
 export function MonteCarloStats() {
-  const [stats, setStats] = useState<SimulationResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [iterations, setIterations] = useState(100000);
   const [selectedTeamId, setSelectedTeamId] = useState<string>(TEAMS[0].id);
 
-  const handleRun = async () => {
-    setLoading(true);
-    setTimeout(async () => {
-        const result = await runMonteCarlo(iterations);
-        setStats(result);
-        setLoading(false);
-    }, 100);
-  };
-
   const getGroupProbability = (teamId: string, groupName: string) => {
-    if (!stats) return 0;
     const count = stats.groupProbabilities[teamId][groupName] || 0;
-    return (count / iterations) * 100;
+    return (count / ITERATIONS) * 100;
   };
 
   const getOpponentProbability = (teamId: string, opponentId: string) => {
-    if (!stats) return 0;
     const count = stats.opponentCounts[teamId]?.[opponentId] || 0;
-    return (count / iterations) * 100;
+    return (count / ITERATIONS) * 100;
   };
 
   const sortedOpponents = useMemo(() => {
-    if (!stats || !selectedTeamId) return [];
+    if (!selectedTeamId) return [];
     
     return TEAMS
       .filter(t => t.id !== selectedTeamId)
@@ -49,10 +38,10 @@ export function MonteCarloStats() {
       }))
       .filter(o => o.probability > 0) 
       .sort((a, b) => b.probability - a.probability);
-  }, [stats, selectedTeamId, iterations]);
+  }, [selectedTeamId]);
 
   const stadiumProbabilities = useMemo(() => {
-    if (!stats || !selectedTeamId) return [];
+    if (!selectedTeamId) return [];
     
     const team = TEAMS.find(t => t.id === selectedTeamId);
     if (!team || !team.pot) return [];
@@ -83,10 +72,10 @@ export function MonteCarloStats() {
     return Object.entries(stadiumProbs)
         .map(([name, count]) => ({ 
             name, 
-            probability: (count / iterations) * 100 
+            probability: (count / ITERATIONS) * 100 
         }))
         .sort((a, b) => b.probability - a.probability);
-  }, [stats, selectedTeamId, iterations]);
+  }, [selectedTeamId]);
 
   return (
     <div className="space-y-6">
@@ -94,37 +83,16 @@ export function MonteCarloStats() {
         <CardHeader>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <CardTitle>Monte Carlo Simulation</CardTitle>
+                    <CardTitle>Monte Carlo Probability Analysis</CardTitle>
                     <CardDescription>
-                        Run {iterations} iterations to estimate probabilities based on current constraints.
+                        Analysis based on {ITERATIONS.toLocaleString()} pre-simulated draws.
                     </CardDescription>
-                </div>
-                <div className="flex items-center gap-3">
-                     <Select 
-                        value={iterations.toString()} 
-                        onValueChange={(v) => setIterations(parseInt(v))}
-                        disabled={loading}
-                    >
-                        <SelectTrigger className="w-[130px]">
-                            <SelectValue placeholder="Iterations" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="10000">10,000 Runs</SelectItem>
-                            <SelectItem value="100000">100,000 Runs</SelectItem>
-                            <SelectItem value="1000000">1,000,000 Runs</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    
-                    <Button onClick={handleRun} disabled={loading}>
-                    {loading ? "Simulating..." : "Run Simulation"}
-                    </Button>
                 </div>
             </div>
         </CardHeader>
       </Card>
 
-      {stats && (
-        <Tabs defaultValue="groups" className="w-full">
+      <Tabs defaultValue="groups" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="groups">Group Probabilities</TabsTrigger>
             <TabsTrigger value="opponents">Opponent Analysis</TabsTrigger>
@@ -290,7 +258,6 @@ export function MonteCarloStats() {
              </Card>
           </TabsContent>
         </Tabs>
-      )}
     </div>
   );
 }

@@ -358,6 +358,94 @@ export const simulateFullDraw = (): Group[] => {
 };
 
 
+// New helper: Complete the draw from a given state
+export const completeCurrentDraw = (
+  currentGroups: Group[],
+  unplacedTeams: Team[]
+): Group[] => {
+  let attempts = 0;
+  // Try 50 times to find a valid completion
+  while (attempts < 50) {
+      try {
+        let groups = cloneGroups(currentGroups);
+        
+        // Group unplaced teams by pot
+        const p1 = unplacedTeams.filter(t => t.pot === 1);
+        const p2 = unplacedTeams.filter(t => t.pot === 2);
+        const p3 = unplacedTeams.filter(t => t.pot === 3);
+        const p4 = unplacedTeams.filter(t => t.pot === 4);
+
+        // If Pot 1 has remaining teams, we need to handle them.
+        // drawPot1 is designed for the full pot 1 start.
+        // But if we are partially done, we can use a logic similar to drawPot for Pot 1 or custom logic.
+        // However, drawPot1 uses `newGroups` and `pot1Teams`. 
+        // If we are mid-way, `currentGroups` already has some Pot 1 teams.
+        // The `drawPot1` function as written resets specific slots based on `pot1Teams` logic (e.g. hosts).
+        // It might be safer to use a modified Pot 1 filler or just rely on manual placement logic if Pot 1 is complex.
+        // For simplicity, if we are in Pot 1, let's try to fill it using a similar greedy/random approach as other pots
+        // but Pot 1 has side constraints.
+        
+        if (p1.length > 0) {
+             // For Pot 1 fast-forward, we can try to use the `canPlaceTeamInPot1` check with a simple backtracking or random shuffle
+             // since `drawPot` uses `canPlaceTeamInGroup` which handles Pot 2-4 logic (confeds).
+             // `canPlaceTeamInPot1` handles the complex side logic.
+             
+             // Custom simple solver for Pot 1 remainder:
+             const fillPot1 = (grps: Group[], teams: Team[]): Group[] | null => {
+                 const shuffled = [...teams].sort(() => Math.random() - 0.5);
+                 const solve = (idx: number): boolean => {
+                     if (idx >= shuffled.length) return true;
+                     const team = shuffled[idx];
+                     
+                     // Try all groups
+                     const groupIndices = [...Array(12).keys()].sort(() => Math.random() - 0.5);
+                     
+                     for (const gIdx of groupIndices) {
+                         if (canPlaceTeamInPot1(team, gIdx, grps)) {
+                             grps[gIdx].teams[0] = team;
+                             if (solve(idx + 1)) return true;
+                             grps[gIdx].teams[0] = null;
+                         }
+                     }
+                     return false;
+                 };
+                 if (solve(0)) return grps;
+                 return null;
+             };
+             
+             const res = fillPot1(groups, p1);
+             if (!res) throw new Error("Deadlock in Pot 1 remainder");
+        }
+
+        if (p2.length > 0) {
+            const res = drawPot(groups, p2, 2);
+            if (!res) throw new Error("Deadlock in Pot 2");
+            groups = res;
+        }
+        
+        if (p3.length > 0) {
+            const res = drawPot(groups, p3, 3);
+            if (!res) throw new Error("Deadlock in Pot 3");
+            groups = res;
+        }
+
+        if (p4.length > 0) {
+            const res = drawPot(groups, p4, 4);
+            if (!res) throw new Error("Deadlock in Pot 4");
+            groups = res;
+        }
+
+        if (validateFinalDraw(groups)) {
+            return groups;
+        }
+      } catch (e) {
+          // continue
+      }
+      attempts++;
+  }
+  throw new Error("Could not complete draw from current state");
+};
+
 // New helper for validateConstraintCounts: Chained Backtracking with Mutation
 const canFitTeamsSequentially = (
   initialGroups: Group[], 

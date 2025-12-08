@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { Team, Group, APPENDIX_B_POSITIONS } from '@/types/draw';
-import { initializeGroups, canPlaceTeamInGroup, canPlaceTeamInPot1, validateConstraintCounts } from '@/lib/engine/draw-logic';
+import { initializeGroups, canPlaceTeamInGroup, canPlaceTeamInPot1, validateConstraintCounts, completeCurrentDraw } from '@/lib/engine/draw-logic';
 import { TEAMS } from '@/lib/data/teams';
 
 export type DrawStep = {
@@ -29,6 +29,7 @@ interface DrawContextType {
   removeTeam: (team: Team, groupIndex: number) => void;
   steps: DrawStep[];
   fastForward: () => void;
+  isFastForwarding: boolean;
 }
 
 const DrawContext = createContext<DrawContextType | undefined>(undefined);
@@ -52,6 +53,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
   const [scanningGroupIndex, setScanningGroupIndex] = useState<number | null>(null);
   const [scanningStatus, setScanningStatus] = useState<'scanning' | 'found' | 'rejected' | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [isFastForwarding, setIsFastForwarding] = useState(false);
   const isProcessingRef = useRef(false);
   const isRunningRef = useRef(isRunning);
 
@@ -149,9 +151,9 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
 
     const isTeamPlaced = (tId: string) => groups.some(g => g.teams.some(gt => gt?.id === tId));
 
-    if (currentPot < 2 && team.pot < 2) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 2 && !isTeamPlaced(t.id)));
-    if (currentPot < 3 && team.pot < 3) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 3 && !isTeamPlaced(t.id)));
-    if (currentPot < 4 && team.pot < 4) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 4 && !isTeamPlaced(t.id)));
+    if (currentPot < 2 && (team.pot ?? 5) < 2) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 2 && !isTeamPlaced(t.id)));
+    if (currentPot < 3 && (team.pot ?? 5) < 3) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 3 && !isTeamPlaced(t.id)));
+    if (currentPot < 4 && (team.pot ?? 5) < 4) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 4 && !isTeamPlaced(t.id)));
 
     for (let gIdx = 0; gIdx < 12; gIdx++) {
         const posMap = APPENDIX_B_POSITIONS[team.pot as 2|3|4][gIdx];
@@ -306,9 +308,9 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
           
           const isTeamPlaced = (tId: string) => groups.some(g => g.teams.some(gt => gt?.id === tId));
 
-          if (currentPot < 2 && team.pot < 2) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 2 && !isTeamPlaced(t.id)));
-          if (currentPot < 3 && team.pot < 3) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 3 && !isTeamPlaced(t.id)));
-          if (currentPot < 4 && team.pot < 4) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 4 && !isTeamPlaced(t.id)));
+          if (currentPot < 2 && (team.pot ?? 5) < 2) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 2 && !isTeamPlaced(t.id)));
+          if (currentPot < 3 && (team.pot ?? 5) < 3) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 3 && !isTeamPlaced(t.id)));
+          if (currentPot < 4 && (team.pot ?? 5) < 4) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 4 && !isTeamPlaced(t.id)));
 
           for (let gIdx = 0; gIdx < 12; gIdx++) {
               const posMap = APPENDIX_B_POSITIONS[team.pot as 2|3|4][gIdx];
@@ -392,6 +394,44 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [availableTeams, isRunning, currentTeam, scanningStatus, currentPot, advancePot]);
 
+  const fastForward = useCallback(async () => {
+    if (!isRunning) return;
+    
+    setIsFastForwarding(true);
+    
+    // Give UI a chance to render the loading state
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // 1. Identify all unplaced teams
+    const placedTeamIds = new Set<string>();
+    groups.forEach(g => {
+        g.teams.forEach(t => {
+            if (t) placedTeamIds.add(t.id);
+        });
+    });
+    
+    const unplacedTeams = TEAMS.filter(t => !placedTeamIds.has(t.id));
+    
+    try {
+        const completedGroups = completeCurrentDraw(groups, unplacedTeams);
+        setGroups(completedGroups);
+        
+        // Update state to "Finished"
+        setCurrentPot(4);
+        setAvailableTeams([]);
+        setCurrentTeam(null);
+        setScanningGroupIndex(null);
+        setScanningStatus(null);
+        isProcessingRef.current = false;
+        
+    } catch (error) {
+        console.error("Fast Forward failed:", error);
+        alert("Could not find a valid completion for the current state. This implies the current partial draw has no valid solution.");
+    } finally {
+        setIsFastForwarding(false);
+    }
+  }, [groups, isRunning]);
+
   const value = {
     groups,
     startDraw,
@@ -408,7 +448,8 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     placeTeam,
     removeTeam,
     steps: [],
-    fastForward: () => {}
+    fastForward,
+    isFastForwarding
   };
 
   return <DrawContext.Provider value={value}>{children}</DrawContext.Provider>;
