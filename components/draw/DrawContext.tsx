@@ -135,7 +135,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     const validIndices: number[] = [];
     
     // Pot 1 Logic
-    if (team.pot === 1) {
+    if ((team.pot ?? 1) === 1) {
         for (let gIdx = 0; gIdx < 12; gIdx++) {
              if (canPlaceTeamInPot1(team, gIdx, groups)) {
                  validIndices.push(gIdx);
@@ -156,7 +156,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     if (currentPot < 4 && (team.pot ?? 5) < 4) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 4 && !isTeamPlaced(t.id)));
 
     for (let gIdx = 0; gIdx < 12; gIdx++) {
-        const posMap = APPENDIX_B_POSITIONS[team.pot as 2|3|4][gIdx];
+        const posMap = APPENDIX_B_POSITIONS[(team.pot ?? 2) as 2|3|4][gIdx];
         const pIdx = posMap - 1;
         
         if (groups[gIdx].teams[pIdx] !== null) continue;
@@ -175,8 +175,8 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
 
   const placeTeam = useCallback((team: Team, groupIndex: number) => {
       let targetPositionIndex = 0;
-      if (team.pot > 1) {
-         const posMap = APPENDIX_B_POSITIONS[team.pot as 2|3|4][groupIndex];
+      if ((team.pot ?? 1) > 1) {
+         const posMap = APPENDIX_B_POSITIONS[(team.pot ?? 2) as 2|3|4][groupIndex];
          targetPositionIndex = posMap - 1;
       }
 
@@ -206,8 +206,8 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
   const removeTeam = useCallback((team: Team, groupIndex: number) => {
       // Find position to clear
       let targetPositionIndex = 0;
-      if (team.pot > 1) {
-         const posMap = APPENDIX_B_POSITIONS[team.pot as 2|3|4][groupIndex];
+      if ((team.pot ?? 1) > 1) {
+         const posMap = APPENDIX_B_POSITIONS[(team.pot ?? 2) as 2|3|4][groupIndex];
          targetPositionIndex = posMap - 1;
       } else {
           // For Pot 1, it's always index 0
@@ -226,13 +226,13 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
       });
 
       // Revert Pot Logic
-      if (team.pot < currentPot) {
-          setCurrentPot(team.pot as 1|2|3|4);
+      if ((team.pot ?? 1) < currentPot) {
+          setCurrentPot((team.pot ?? 1) as 1|2|3|4);
           
           // We need to find all unassigned teams for this "old" pot to properly populate availableTeams
           // We use the current 'groups' state, but treating the team we just removed as definitely unassigned
           const unassignedFromTargetPot = TEAMS.filter(t => {
-              if (t.pot !== team.pot) return false;
+              if (t.pot !== (team.pot ?? 1)) return false;
               if (t.id === team.id) return true;
               
               // Check if currently assigned in any OTHER group
@@ -288,7 +288,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
       let targetGroupIndex = -1;
       let targetPositionIndex = -1;
 
-      if (team.pot === 1) {
+      if ((team.pot ?? 1) === 1) {
           // Live Pot 1 Scan Logic
           for (let gIdx = 0; gIdx < 12; gIdx++) {
               if (canPlaceTeamInPot1(team, gIdx, groups)) {
@@ -313,7 +313,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
           if (currentPot < 4 && (team.pot ?? 5) < 4) allRemainingTeams.push(...TEAMS.filter(t => t.pot === 4 && !isTeamPlaced(t.id)));
 
           for (let gIdx = 0; gIdx < 12; gIdx++) {
-              const posMap = APPENDIX_B_POSITIONS[team.pot as 2|3|4][gIdx];
+              const posMap = APPENDIX_B_POSITIONS[(team.pot ?? 2) as 2|3|4][gIdx];
               const pIdx = posMap - 1;
               
               if (groups[gIdx].teams[pIdx] !== null) continue;
