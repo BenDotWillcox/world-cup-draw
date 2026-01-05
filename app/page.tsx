@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DrawVisualizer } from "@/components/draw/DrawVisualizer";
 import { MonteCarloStats } from "@/components/draw/MonteCarloStats";
+import { TeamPathMap } from "@/components/draw/TeamPathMap";
 import { DrawProvider } from "@/components/draw/DrawContext";
 
 export default function Home() {
@@ -18,9 +19,10 @@ export default function Home() {
 
         <DrawProvider>
           <Tabs defaultValue="visualizer" className="w-full">
-            <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsList className="grid w-full max-w-md grid-cols-3">
               <TabsTrigger value="visualizer">Visual Draw</TabsTrigger>
               <TabsTrigger value="stats">Monte Carlo Stats</TabsTrigger>
+              <TabsTrigger value="map">Path Visualizer</TabsTrigger>
             </TabsList>
             
             <TabsContent value="visualizer" className="mt-6">
@@ -29,6 +31,10 @@ export default function Home() {
             
             <TabsContent value="stats" className="mt-6">
               <MonteCarloStats />
+            </TabsContent>
+
+            <TabsContent value="map" className="mt-6">
+              <TeamPathMap />
             </TabsContent>
           </Tabs>
         </DrawProvider>
