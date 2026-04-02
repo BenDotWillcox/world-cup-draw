@@ -25,7 +25,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Play, Pause, RotateCcw, Calendar, Clock, MapPin, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, resolvePath } from "@/lib/utils";
 
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
@@ -83,7 +83,7 @@ export function TeamPathMap() {
 
     const knockoutFlow = useMemo(() => getKnockoutFlow(), []);
 
-    const teamFlag = useMemo(() => TEAMS.find(t => t.id === selectedTeamId)?.flagUrl || "/file.svg", [selectedTeamId]);
+    const teamFlag = useMemo(() => resolvePath(TEAMS.find(t => t.id === selectedTeamId)?.flagUrl) || resolvePath("/file.svg"), [selectedTeamId]);
 
     // Calculate Path Segments and Stops
     const { segments, stops } = useMemo(() => {
@@ -611,7 +611,7 @@ export function TeamPathMap() {
                                         {/* Flag */}
                                         {opponentHighlight.flagUrl && (
                                             <image
-                                                href={opponentHighlight.flagUrl}
+                                                href={resolvePath(opponentHighlight.flagUrl)}
                                                 width={24}
                                                 height={16}
                                                 preserveAspectRatio="none"
@@ -684,7 +684,7 @@ export function TeamPathMap() {
                                         >
                                             {selectedOpponent.flagUrl && (
                                                 <img
-                                                    src={selectedOpponent.flagUrl}
+                                                    src={resolvePath(selectedOpponent.flagUrl)}
                                                     alt={selectedOpponent.teamName}
                                                     className="w-10 h-6 object-cover rounded border shadow-sm"
                                                 />
