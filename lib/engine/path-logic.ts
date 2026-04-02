@@ -167,6 +167,46 @@ export const getGroupMatchesForPosition = (group: string, position: number): str
 };
 
 /**
+ * Returns BracketPathNode[] for a team's 3 group stage matches,
+ * with the known opponent populated (no probability needed).
+ */
+export function getGroupStageNodes(group: string, position: number): BracketPathNode[] {
+  const code = `${group}${position}`;
+  const matches = MATCH_SCHEDULE
+    .filter(m => m.t1 === code || m.t2 === code)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const groupObj = OFFICIAL_GROUPS.find(g => g.name === group);
+
+  return matches.map((m, i) => {
+    // The opponent code is the other side of the match
+    const oppCode = m.t1 === code ? m.t2 : m.t1;
+    // Parse group position from code like "A2" -> position 2
+    const oppPos = parseInt(oppCode.slice(1), 10);
+    const oppTeam = groupObj?.teams[oppPos - 1];
+
+    const opponents: BracketOpponent[] = oppTeam
+      ? [{
+          teamId: oppTeam.id,
+          teamName: oppTeam.name,
+          flagUrl: oppTeam.flagUrl,
+          entryPath: oppCode,
+        }]
+      : [];
+
+    return {
+      matchId: m.id,
+      round: `Group Stage ${i + 1}`,
+      venue: m.stadium,
+      date: m.date,
+      time: m.time,
+      opponents,
+      teamPlaceholder: code,
+    };
+  });
+}
+
+/**
  * Builds a map of Match ID -> Next Match ID (for Winner)
  */
 export const getKnockoutFlow = (): Record<string, string> => {

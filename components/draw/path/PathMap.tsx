@@ -185,6 +185,32 @@ export function PathMap({
     return matchId === selectedStop || matchId === hoveredBracketMatch;
   }
 
+  // Compute label stacking for stops that share the same city
+  // Groups visible stops by coordinate key, assigns each a vertical offset index
+  const stopLabelOffsets = useMemo(() => {
+    const coordGroups: Record<string, string[]> = {}; // coordKey -> matchId[]
+
+    for (const stop of allStops) {
+      // Only count visible stops
+      const opacity = stop.position === "group"
+        ? (showGroupStage ? 0.9 : 0)
+        : (highlightedPosition === stop.position ? 1 : 0);
+      if (opacity === 0) continue;
+
+      const coordKey = `${stop.coords[0]},${stop.coords[1]}`;
+      if (!coordGroups[coordKey]) coordGroups[coordKey] = [];
+      coordGroups[coordKey].push(stop.matchId);
+    }
+
+    const offsets: Record<string, { index: number; total: number }> = {};
+    for (const matchIds of Object.values(coordGroups)) {
+      for (let i = 0; i < matchIds.length; i++) {
+        offsets[matchIds[i]] = { index: i, total: matchIds.length };
+      }
+    }
+    return offsets;
+  }, [allStops, showGroupStage, highlightedPosition]);
+
   // Zoom-to-city logic
   const DEFAULT_CENTER: [number, number] = [-96, 40];
   const DEFAULT_ZOOM = 1;
@@ -291,22 +317,10 @@ export function PathMap({
             />
           ))}
 
-          {/* City markers (background) */}
+          {/* City dots (background) */}
           {Object.entries(HOST_CITIES).map(([name, coords]) => (
             <Marker key={`city-${name}`} coordinates={coords}>
               <circle r={2.5} fill="#94A3B8" stroke="#fff" strokeWidth={0.5} />
-              <text
-                textAnchor="middle"
-                y={9}
-                style={{
-                  fontFamily: "system-ui",
-                  fill: "#94A3B8",
-                  fontSize: "8px",
-                  fontWeight: 500,
-                }}
-              >
-                {name}
-              </text>
             </Marker>
           ))}
 
@@ -341,15 +355,65 @@ export function PathMap({
                   strokeWidth={isActive ? 2.5 : 2}
                   opacity={opacity}
                 />
+                {/* Labels rendered in separate layer on top */}
+              </Marker>
+            );
+          })}
+
+          {/* === Text layers rendered last so they sit on top of all paths === */}
+
+          {/* City name labels */}
+          {Object.entries(HOST_CITIES).map(([name, coords]) => (
+            <Marker key={`city-label-${name}`} coordinates={coords}>
+              <text
+                textAnchor="middle"
+                y={18}
+                style={{
+                  fontFamily: "system-ui",
+                  fill: "#1e293b",
+                  fontSize: "8px",
+                  fontWeight: 600,
+                  paintOrder: "stroke",
+                  stroke: "white",
+                  strokeWidth: "3px",
+                  strokeLinejoin: "round",
+                }}
+              >
+                {name}
+              </text>
+            </Marker>
+          ))}
+
+          {/* Round labels (stacked per city) */}
+          {allStops.map((stop) => {
+            const opacity = getOpacity(stop.position);
+            if (opacity === 0) return null;
+            const isActive = stop.position !== "group" && highlightedPosition === stop.position;
+            const offsetInfo = stopLabelOffsets[stop.matchId];
+            const stackIndex = offsetInfo?.index ?? 0;
+            const stackTotal = offsetInfo?.total ?? 1;
+            const labelY = -12 - (stackTotal - 1 - stackIndex) * 12;
+
+            return (
+              <Marker
+                key={`label-${stop.key}`}
+                coordinates={stop.coords}
+                onClick={() => onStopClick(stop.matchId, stop.position)}
+              >
                 <text
                   textAnchor="middle"
-                  y={-10}
+                  y={labelY}
                   style={{
                     fontFamily: "system-ui",
-                    fill: stop.color,
+                    fill: "#0f172a",
                     fontSize: isActive ? "10px" : "9px",
                     fontWeight: 700,
                     opacity,
+                    paintOrder: "stroke",
+                    stroke: "white",
+                    strokeWidth: "3px",
+                    strokeLinejoin: "round",
+                    cursor: "pointer",
                   }}
                 >
                   {stop.label}
@@ -357,7 +421,6 @@ export function PathMap({
               </Marker>
             );
           })}
-
 
         </ZoomableGroup>
       </ComposableMap>

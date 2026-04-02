@@ -5,6 +5,7 @@ import { TEAMS } from "@/lib/data/teams";
 import {
   getTeamGroupAndPosition,
   getGroupMatchesForPosition,
+  getGroupStageNodes,
   getFullBracketPath,
   computeTravelStats,
   getThirdPlaceCollapsedInfo,
@@ -64,26 +65,37 @@ export function TeamPathMap() {
     [selectedGroup, selectedTeamId, expandedThirdPlaceMatchId]
   );
 
+  // Group stage nodes for popover display
+  const groupNodes = useMemo(
+    () => getGroupStageNodes(selectedGroup, selectedPos),
+    [selectedGroup, selectedPos]
+  );
+
   // Travel stats — group matches + knockout path
   const groupMatchIds = useMemo(
     () => getGroupMatchesForPosition(selectedGroup, selectedPos),
     [selectedGroup, selectedPos]
   );
 
+  const groupStats = useMemo(
+    () => computeTravelStats(groupMatchIds),
+    [groupMatchIds]
+  );
+
   const firstStats = useMemo(
-    () => computeTravelStats([...groupMatchIds, ...firstPath.map((n) => n.matchId)]),
-    [groupMatchIds, firstPath]
+    () => computeTravelStats(firstPath.map((n) => n.matchId)),
+    [firstPath]
   );
   const secondStats = useMemo(
-    () => computeTravelStats([...groupMatchIds, ...secondPath.map((n) => n.matchId)]),
-    [groupMatchIds, secondPath]
+    () => computeTravelStats(secondPath.map((n) => n.matchId)),
+    [secondPath]
   );
   const thirdStats = useMemo(
     () =>
       thirdPath.length > 0
-        ? computeTravelStats([...groupMatchIds, ...thirdPath.map((n) => n.matchId)])
+        ? computeTravelStats(thirdPath.map((n) => n.matchId))
         : null,
-    [groupMatchIds, thirdPath]
+    [thirdPath]
   );
 
   // Reset state on team change using derived state pattern
@@ -128,7 +140,7 @@ export function TeamPathMap() {
   );
 
   const handleBracketMatchClick = useCallback(
-    (matchId: string, position: 1 | 2 | 3) => {
+    (matchId: string, position: 1 | 2 | 3 | "group") => {
       setSelectedStop(matchId);
       setSelectedStopPosition(position);
     },
@@ -141,15 +153,20 @@ export function TeamPathMap() {
     setHighlightedPosition(3);
   }, []);
 
-  // Find the actual stop node for the popover
-  let popoverNode: { node: BracketPathNode; position: 1 | 2 | 3 } | null = null;
-  if (selectedStop && selectedStopPosition !== "group") {
-    const firstMatch = firstPath.find((n) => n.matchId === selectedStop);
-    const secondMatch = secondPath.find((n) => n.matchId === selectedStop);
-    const thirdMatch = thirdPath.find((n) => n.matchId === selectedStop);
-    if (firstMatch) popoverNode = { node: firstMatch, position: 1 };
-    else if (secondMatch) popoverNode = { node: secondMatch, position: 2 };
-    else if (thirdMatch) popoverNode = { node: thirdMatch, position: 3 };
+  // Find the actual stop node for the popover (knockout or group)
+  let popoverNode: { node: BracketPathNode; position: 1 | 2 | 3 | "group" } | null = null;
+  if (selectedStop) {
+    if (selectedStopPosition === "group") {
+      const groupMatch = groupNodes.find((n) => n.matchId === selectedStop);
+      if (groupMatch) popoverNode = { node: groupMatch, position: "group" };
+    } else {
+      const firstMatch = firstPath.find((n) => n.matchId === selectedStop);
+      const secondMatch = secondPath.find((n) => n.matchId === selectedStop);
+      const thirdMatch = thirdPath.find((n) => n.matchId === selectedStop);
+      if (firstMatch) popoverNode = { node: firstMatch, position: 1 };
+      else if (secondMatch) popoverNode = { node: secondMatch, position: 2 };
+      else if (thirdMatch) popoverNode = { node: thirdMatch, position: 3 };
+    }
   }
 
   const positionButtons: Array<{ pos: 1 | 2 | 3; label: string; color: string }> = [
@@ -277,49 +294,52 @@ export function TeamPathMap() {
                 <PathLegend />
               </div>
 
-              {/* Stop popover overlay */}
-              {popoverNode && (
-                <div className="absolute top-3 right-3 z-10">
-                  <StopPopover
-                    node={popoverNode.node}
-                    position={popoverNode.position}
-                    onClose={() => setSelectedStop(null)}
-                  />
-                </div>
-              )}
-
             </div>
           </div>
 
-          {/* Bracket */}
+          {/* Right panel: Popover (when match selected) or Bracket */}
           <div className="flex-[2] min-w-0">
-            <div className="border rounded-lg overflow-hidden bg-card p-2 lg:h-[500px]">
-              <h3 className="text-sm font-semibold text-muted-foreground mb-2 px-2">
-                Knockout Bracket — Group {selectedGroup}
-              </h3>
-              <BracketMiniView
-                firstPath={firstPath}
-                secondPath={secondPath}
-                thirdPath={thirdPath}
-                thirdPlaceInfo={thirdPlaceInfo}
-                expandedThirdPlaceMatchId={expandedThirdPlaceMatchId}
-                highlightedPosition={highlightedPosition}
-                hoveredBracketMatch={hoveredBracketMatch}
-                selectedStop={selectedStop}
-                onMatchHover={setHoveredBracketMatch}
-                onMatchClick={handleBracketMatchClick}
-                onExpandThirdPlace={handleExpandThirdPlace}
-              />
-            </div>
+            {popoverNode ? (
+              <div className="border rounded-lg overflow-hidden bg-card p-2 lg:h-[500px] flex flex-col">
+                <StopPopover
+                  node={popoverNode.node}
+                  position={popoverNode.position}
+                  onClose={() => setSelectedStop(null)}
+                />
+              </div>
+            ) : (
+              <div className="border rounded-lg bg-card p-2 lg:h-[500px] flex flex-col min-h-0">
+                <h3 className="text-sm font-semibold text-muted-foreground mb-2 px-2 shrink-0">
+                  Match Schedule — Group {selectedGroup}
+                </h3>
+                <BracketMiniView
+                  groupNodes={groupNodes}
+                  showGroupStage={showGroupStage}
+                  firstPath={firstPath}
+                  secondPath={secondPath}
+                  thirdPath={thirdPath}
+                  thirdPlaceInfo={thirdPlaceInfo}
+                  expandedThirdPlaceMatchId={expandedThirdPlaceMatchId}
+                  highlightedPosition={highlightedPosition}
+                  hoveredBracketMatch={hoveredBracketMatch}
+                  selectedStop={selectedStop}
+                  onMatchHover={setHoveredBracketMatch}
+                  onMatchClick={handleBracketMatchClick}
+                  onExpandThirdPlace={handleExpandThirdPlace}
+                />
+              </div>
+            )}
           </div>
         </div>
 
         {/* Travel stats */}
         <TravelStatsBar
+          groupStats={groupStats}
           firstStats={firstStats}
           secondStats={secondStats}
           thirdStats={thirdStats}
           highlightedPosition={highlightedPosition}
+          showGroupStage={showGroupStage}
         />
       </CardContent>
     </Card>

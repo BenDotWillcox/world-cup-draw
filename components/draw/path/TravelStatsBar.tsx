@@ -6,10 +6,12 @@ import { MapPin, Route, Calendar, ChevronDown, ChevronUp, Plane } from "lucide-r
 import { PATH_COLORS } from "./PathLegend";
 
 interface TravelStatsBarProps {
+  groupStats: TravelStats | null;
   firstStats: TravelStats | null;
   secondStats: TravelStats | null;
   thirdStats: TravelStats | null;
   highlightedPosition: 1 | 2 | 3 | null;
+  showGroupStage: boolean;
 }
 
 function StatBlock({ label, stats, color }: { label: string; stats: TravelStats; color: string }) {
@@ -69,23 +71,43 @@ function StatBlock({ label, stats, color }: { label: string; stats: TravelStats;
   );
 }
 
-export function TravelStatsBar({ firstStats, secondStats, thirdStats, highlightedPosition }: TravelStatsBarProps) {
+export function TravelStatsBar({ groupStats, firstStats, secondStats, thirdStats, highlightedPosition, showGroupStage }: TravelStatsBarProps) {
+  const showGroup = showGroupStage && groupStats && groupStats.legs.length > 0;
+
   if (highlightedPosition === 1 && firstStats) {
-    return <StatBlock label="1st Place Path" stats={firstStats} color={PATH_COLORS.first} />;
+    return (
+      <div className="space-y-2">
+        {showGroup && <StatBlock label="Group Stage" stats={groupStats} color={PATH_COLORS.group} />}
+        <StatBlock label="1st Place Path" stats={firstStats} color={PATH_COLORS.first} />
+      </div>
+    );
   }
   if (highlightedPosition === 2 && secondStats) {
-    return <StatBlock label="2nd Place Path" stats={secondStats} color={PATH_COLORS.second} />;
+    return (
+      <div className="space-y-2">
+        {showGroup && <StatBlock label="Group Stage" stats={groupStats} color={PATH_COLORS.group} />}
+        <StatBlock label="2nd Place Path" stats={secondStats} color={PATH_COLORS.second} />
+      </div>
+    );
   }
   if (highlightedPosition === 3 && thirdStats) {
-    return <StatBlock label="3rd Place Path" stats={thirdStats} color={PATH_COLORS.third} />;
+    return (
+      <div className="space-y-2">
+        {showGroup && <StatBlock label="Group Stage" stats={groupStats} color={PATH_COLORS.group} />}
+        <StatBlock label="3rd Place Path" stats={thirdStats} color={PATH_COLORS.third} />
+      </div>
+    );
   }
 
-  // Show all 3 side by side
+  // No knockout path selected — show group if toggled, plus any knockout stats
   return (
-    <div className="flex flex-wrap gap-2">
-      {firstStats && <StatBlock label="1st" stats={firstStats} color={PATH_COLORS.first} />}
-      {secondStats && <StatBlock label="2nd" stats={secondStats} color={PATH_COLORS.second} />}
-      {thirdStats && <StatBlock label="3rd" stats={thirdStats} color={PATH_COLORS.third} />}
+    <div className="space-y-2">
+      {showGroup && <StatBlock label="Group Stage" stats={groupStats} color={PATH_COLORS.group} />}
+      <div className="flex flex-wrap gap-2">
+        {firstStats && <StatBlock label="1st" stats={firstStats} color={PATH_COLORS.first} />}
+        {secondStats && <StatBlock label="2nd" stats={secondStats} color={PATH_COLORS.second} />}
+        {thirdStats && <StatBlock label="3rd" stats={thirdStats} color={PATH_COLORS.third} />}
+      </div>
     </div>
   );
 }

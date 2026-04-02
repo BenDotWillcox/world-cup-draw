@@ -59,10 +59,10 @@ export const TEAMS: Team[] = [
   { id: 'NZL', name: 'New Zealand', confederation: 'OFC', rank: 39, pot: 4, flagUrl: '/images/flags/new-zealand.png' },
   
   // Placeholders - European Play-offs
-  { id: 'BOS', name: 'Bosnia and Herzegovina', confederation: 'UEFA', rank: 40, pot: 4 },
-  { id: 'SWE', name: 'Sweden', confederation: 'UEFA', rank: 41, pot: 4 },
-  { id: 'TUR', name: 'Turkey', confederation: 'UEFA', rank: 42, pot: 4 },
-  { id: 'CZE', name: 'Czech Republic', confederation: 'UEFA', rank: 43, pot: 4 },
+  { id: 'BOS', name: 'Bosnia and Herzegovina', confederation: 'UEFA', rank: 40, pot: 4, flagUrl: '/images/flags/bosnia-and-herzegovina.png' },
+  { id: 'SWE', name: 'Sweden', confederation: 'UEFA', rank: 41, pot: 4, flagUrl: '/images/flags/sweden.png' },
+  { id: 'TUR', name: 'Turkey', confederation: 'UEFA', rank: 42, pot: 4, flagUrl: '/images/flags/turkey.png' },
+  { id: 'CZE', name: 'Czech Republic', confederation: 'UEFA', rank: 43, pot: 4, flagUrl: '/images/flags/czech-republic.png' },
 
   // Placeholders - FIFA Play-offs
   { 
@@ -71,7 +71,9 @@ export const TEAMS: Team[] = [
     confederation: 'FIFA' as any, 
     potentialConfederations: ['OFC', 'CONCACAF', 'CAF'], 
     rank: 44,
-    pot: 4
+    pot: 4,
+    flagUrl: '/images/flags/dr-congo.png'
+
   },
   { 
     id: 'IRQ', 
@@ -79,7 +81,8 @@ export const TEAMS: Team[] = [
     confederation: 'FIFA' as any, 
     potentialConfederations: ['CONMEBOL', 'CONCACAF', 'AFC'],
     rank: 45,
-    pot: 4
+    pot: 4,
+    flagUrl: '/images/flags/iraq.png'
   },
 ];
 

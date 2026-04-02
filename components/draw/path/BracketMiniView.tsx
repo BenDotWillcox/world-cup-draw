@@ -6,7 +6,11 @@ import { resolvePath } from "@/lib/utils";
 import { PATH_COLORS } from "./PathLegend";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+type PositionType = 1 | 2 | 3 | "group";
+
 interface BracketMiniViewProps {
+  groupNodes: BracketPathNode[];
+  showGroupStage: boolean;
   firstPath: BracketPathNode[];
   secondPath: BracketPathNode[];
   thirdPath: BracketPathNode[];
@@ -16,7 +20,7 @@ interface BracketMiniViewProps {
   hoveredBracketMatch: string | null;
   selectedStop: string | null;
   onMatchHover: (matchId: string | null) => void;
-  onMatchClick: (matchId: string, position: 1 | 2 | 3) => void;
+  onMatchClick: (matchId: string, position: PositionType) => void;
   onExpandThirdPlace: (matchId: string) => void;
 }
 
@@ -38,11 +42,11 @@ function abbrev(venue: string): string {
 interface MatchNodeProps {
   node: BracketPathNode | null;
   color: string;
-  position: 1 | 2 | 3;
+  position: PositionType;
   isHovered: boolean;
   isSelected: boolean;
   onHover: (matchId: string | null) => void;
-  onClick: (matchId: string, position: 1 | 2 | 3) => void;
+  onClick: (matchId: string, position: PositionType) => void;
 }
 
 function MatchNode({ node, color, position, isHovered, isSelected, onHover, onClick }: MatchNodeProps) {
@@ -52,6 +56,7 @@ function MatchNode({ node, color, position, isHovered, isSelected, onHover, onCl
 
   const active = isHovered || isSelected;
   const topOpponent = node.opponents[0] || null;
+  const isGroup = position === "group";
 
   return (
     <div
@@ -79,7 +84,7 @@ function MatchNode({ node, color, position, isHovered, isSelected, onHover, onCl
             />
           )}
           <span className="truncate text-muted-foreground">{topOpponent.teamName}</span>
-          {topOpponent.probability != null && (
+          {!isGroup && topOpponent.probability != null && (
             <span className="text-[10px] font-medium shrink-0 ml-auto" style={{ color }}>
               {topOpponent.probability.toFixed(0)}%
             </span>
@@ -93,6 +98,8 @@ function MatchNode({ node, color, position, isHovered, isSelected, onHover, onCl
 }
 
 export function BracketMiniView({
+  groupNodes,
+  showGroupStage,
   firstPath,
   secondPath,
   thirdPath,
@@ -125,82 +132,119 @@ export function BracketMiniView({
 
   // If only one column is visible, give it more room. If none, show placeholder.
   const visibleColumns = columns.filter(c => isColumnVisible(c.position));
-  const showPlaceholder = visibleColumns.length === 0;
+  const showPlaceholder = visibleColumns.length === 0 && !showGroupStage;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full min-h-0 flex flex-col">
       {showPlaceholder ? (
         <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground px-4 text-center">
-          Select a finishing position to view the knockout bracket path.
+          Select a finishing position or enable Group Stage to view the bracket path.
         </div>
       ) : (
         <>
-          {/* Column headers */}
-          <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)` }}>
-            {visibleColumns.map(col => (
-              <div key={col.position} className="text-center">
-                <div className="text-xs font-semibold mb-1" style={{ color: col.color }}>
-                  {col.label}
+          {/* Column headers (only if knockout columns visible) */}
+          {visibleColumns.length > 0 && (
+            <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)` }}>
+              {visibleColumns.map(col => (
+                <div key={col.position} className="text-center">
+                  <div className="text-xs font-semibold mb-1" style={{ color: col.color }}>
+                    {col.label}
+                  </div>
+                  {col.position === 3 && (
+                    <Select
+                      value={expandedThirdPlaceMatchId || ""}
+                      onValueChange={onExpandThirdPlace}
+                    >
+                      <SelectTrigger className="h-6 text-[10px] w-full">
+                        <SelectValue placeholder="Select entry" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {thirdPlaceInfo.possibleMatchIds.map((mid, i) => (
+                          <SelectItem key={mid} value={mid} className="text-xs">
+                            {mid} — {thirdPlaceInfo.possibleVenues[i]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
-                {col.position === 3 && (
-                  <Select
-                    value={expandedThirdPlaceMatchId || ""}
-                    onValueChange={onExpandThirdPlace}
-                  >
-                    <SelectTrigger className="h-6 text-[10px] w-full">
-                      <SelectValue placeholder="Select entry" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {thirdPlaceInfo.possibleMatchIds.map((mid, i) => (
-                        <SelectItem key={mid} value={mid} className="text-xs">
-                          {mid} — {thirdPlaceInfo.possibleVenues[i]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
-          {/* Round rows */}
-          <div className="flex-1 overflow-y-auto space-y-1.5">
-            {ROUND_LABELS.map((round, rowIdx) => (
-              <div key={round}>
-                <div className="text-[10px] font-medium text-muted-foreground mb-1">{round}</div>
-                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)` }}>
-                  {visibleColumns.map(col => {
-                    const node = col.path[rowIdx] || null;
-                    const isHovered = node ? hoveredBracketMatch === node.matchId : false;
-                    const isSelected = node ? selectedStop === node.matchId : false;
-
-                    // If 3rd place not yet selected, show empty for that column
-                    if (col.position === 3 && !expandedThirdPlaceMatchId) {
-                      return (
-                        <div key={col.position} className="rounded-md border border-dashed p-2 text-[10px] text-muted-foreground text-center h-full flex items-center justify-center"
-                          style={{ borderColor: `${col.color}40` }}
-                        >
-                          Select entry
-                        </div>
-                      );
-                    }
-
-                    return (
+          {/* Scrollable rows */}
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-1.5 pb-2">
+            {/* Group stage rows */}
+            {showGroupStage && groupNodes.length > 0 && (
+              <>
+                {groupNodes.map((node, i) => {
+                  const isHovered = hoveredBracketMatch === node.matchId;
+                  const isSelected = selectedStop === node.matchId;
+                  return (
+                    <div key={node.matchId}>
+                      <div className="text-[10px] font-medium text-muted-foreground mb-1">
+                        Group Stage {i + 1}
+                      </div>
                       <MatchNode
-                        key={col.position}
                         node={node}
-                        color={col.color}
-                        position={col.position}
+                        color={PATH_COLORS.group}
+                        position="group"
                         isHovered={isHovered}
                         isSelected={isSelected}
                         onHover={onMatchHover}
                         onClick={onMatchClick}
                       />
-                    );
-                  })}
+                    </div>
+                  );
+                })}
+                {/* Divider between group and knockout */}
+                {visibleColumns.length > 0 && (
+                  <div className="border-t my-2" />
+                )}
+              </>
+            )}
+
+            {/* Knockout round rows */}
+            {ROUND_LABELS.map((round, rowIdx) => {
+              // Skip if no knockout columns visible
+              if (visibleColumns.length === 0) return null;
+              return (
+                <div key={round}>
+                  <div className="text-[10px] font-medium text-muted-foreground mb-1">{round}</div>
+                  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)` }}>
+                    {visibleColumns.map(col => {
+                      const node = col.path[rowIdx] || null;
+                      const isHovered = node ? hoveredBracketMatch === node.matchId : false;
+                      const isSelected = node ? selectedStop === node.matchId : false;
+
+                      // If 3rd place not yet selected, show empty for that column
+                      if (col.position === 3 && !expandedThirdPlaceMatchId) {
+                        return (
+                          <div key={col.position} className="rounded-md border border-dashed p-2 text-[10px] text-muted-foreground text-center h-full flex items-center justify-center"
+                            style={{ borderColor: `${col.color}40` }}
+                          >
+                            Select entry
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <MatchNode
+                          key={col.position}
+                          node={node}
+                          color={col.color}
+                          position={col.position}
+                          isHovered={isHovered}
+                          isSelected={isSelected}
+                          onHover={onMatchHover}
+                          onClick={onMatchClick}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
