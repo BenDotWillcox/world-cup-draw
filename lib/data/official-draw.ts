@@ -14,14 +14,14 @@ export const OFFICIAL_GROUPS: Group[] = [
       getTeam('MEX'),         // 1. Mexico
       getTeam('RSA'),         // 2. South Africa
       getTeam('KOR'),         // 3. Korea Republic
-      getTeam('PO_UEFA_D')    // 4. UEFA Playoff D Winner
+      getTeam('CZE')    // 4. UEFA Playoff D Winner
     ]
   },
   {
     name: 'B',
     teams: [
       getTeam('CAN'),         // 1. Canada
-      getTeam('PO_UEFA_A'),   // 2. UEFA Playoff A Winner
+      getTeam('BOS'),   // 2. UEFA Playoff A Winner
       getTeam('QAT'),         // 3. Qatar
       getTeam('SUI')          // 4. Switzerland
     ]
@@ -41,7 +41,7 @@ export const OFFICIAL_GROUPS: Group[] = [
       getTeam('USA'),         // 1. USA
       getTeam('PAR'),         // 2. Paraguay
       getTeam('AUS'),         // 3. Australia
-      getTeam('PO_UEFA_C')    // 4. UEFA Playoff C Winner
+      getTeam('TUR')    // 4. UEFA Playoff C Winner
     ]
   },
   {
@@ -58,7 +58,7 @@ export const OFFICIAL_GROUPS: Group[] = [
     teams: [
       getTeam('NED'),         // 1. Netherlands
       getTeam('JPN'),         // 2. Japan
-      getTeam('PO_UEFA_B'),   // 3. UEFA Playoff B Winner
+      getTeam('SWE'),   // 3. UEFA Playoff B Winner
       getTeam('TUN')          // 4. Tunisia
     ]
   },
@@ -85,7 +85,7 @@ export const OFFICIAL_GROUPS: Group[] = [
     teams: [
       getTeam('FRA'),         // 1. France
       getTeam('SEN'),         // 2. Senegal
-      getTeam('PO_FIFA_2'),   // 3. FIFA 2 Winner
+      getTeam('IRQ'),   // 3. FIFA 2 Winner
       getTeam('NOR')          // 4. Norway
     ]
   },
@@ -102,7 +102,7 @@ export const OFFICIAL_GROUPS: Group[] = [
     name: 'K',
     teams: [
       getTeam('POR'),         // 1. Portugal
-      getTeam('PO_FIFA_1'),   // 2. FIFA 1 Winner
+      getTeam('COD'),   // 2. FIFA 1 Winner
       getTeam('UZB'),         // 3. Uzbekistan
       getTeam('COL')          // 4. Colombia
     ]

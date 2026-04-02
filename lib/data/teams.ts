@@ -59,23 +59,23 @@ export const TEAMS: Team[] = [
   { id: 'NZL', name: 'New Zealand', confederation: 'OFC', rank: 39, pot: 4, flagUrl: '/images/flags/new-zealand.png' },
   
   // Placeholders - European Play-offs
-  { id: 'PO_UEFA_A', name: 'ITA-NIR-WAL-BIH', confederation: 'UEFA', rank: 40, pot: 4 },
-  { id: 'PO_UEFA_B', name: 'UKR-SWE-POL-ALB', confederation: 'UEFA', rank: 41, pot: 4 },
-  { id: 'PO_UEFA_C', name: 'TUR-ROU-SVK-KOS', confederation: 'UEFA', rank: 42, pot: 4 },
-  { id: 'PO_UEFA_D', name: 'DEN-MKD-CZE-IRL', confederation: 'UEFA', rank: 43, pot: 4 },
+  { id: 'BOS', name: 'Bosnia and Herzegovina', confederation: 'UEFA', rank: 40, pot: 4 },
+  { id: 'SWE', name: 'Sweden', confederation: 'UEFA', rank: 41, pot: 4 },
+  { id: 'TUR', name: 'Turkey', confederation: 'UEFA', rank: 42, pot: 4 },
+  { id: 'CZE', name: 'Czech Republic', confederation: 'UEFA', rank: 43, pot: 4 },
 
   // Placeholders - FIFA Play-offs
   { 
-    id: 'PO_FIFA_1', 
-    name: 'COD-NCL-JAM', 
+    id: 'COD', 
+    name: 'DR Congo', 
     confederation: 'FIFA' as any, 
     potentialConfederations: ['OFC', 'CONCACAF', 'CAF'], 
     rank: 44,
     pot: 4
   },
   { 
-    id: 'PO_FIFA_2', 
-    name: 'IRQ-BOL-SUR', 
+    id: 'IRQ', 
+    name: 'Iraq', 
     confederation: 'FIFA' as any, 
     potentialConfederations: ['CONMEBOL', 'CONCACAF', 'AFC'],
     rank: 45,
