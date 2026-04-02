@@ -6,12 +6,13 @@ import { HOST_CITIES } from "@/lib/data/venues";
 import { TEAMS } from "@/lib/data/teams";
 import { MATCH_SCHEDULE } from "@/lib/data/matches";
 import { KNOCKOUT_SCHEDULE } from "@/lib/data/knockout-schedule";
-import { OFFICIAL_GROUPS } from "@/lib/data/official-draw";
 import {
-    getWeightedPathEntryPoints, 
-    getGroupMatchesForPosition, 
+    getWeightedPathEntryPoints,
+    getGroupMatchesForPosition,
     getKnockoutFlow,
-    getTeamGroupAndPosition
+    getTeamGroupAndPosition,
+    resolveMatchOpponents,
+    type EnhancedMatchInfo
 } from "@/lib/engine/path-logic";
 import {
     Select,
@@ -22,7 +23,9 @@ import {
 } from "@/components/ui/select";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, RotateCcw, Calendar, Clock, Trophy } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Play, Pause, RotateCcw, Calendar, Clock, MapPin, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
@@ -55,12 +58,15 @@ export function TeamPathMap() {
     const [selectedTeamId, setSelectedTeamId] = useState<string>("USA");
     const [selectedGroup, setSelectedGroup] = useState<string>("D");
     const [selectedPos, setSelectedPos] = useState<string>("1");
-    
+
     // Animation State
     const [currentTime, setCurrentTime] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const requestRef = useRef<number | null>(null);
     const startTimeRef = useRef<number | undefined>(undefined);
+
+    // Opponent cycling state: tracks selected opponent index per match
+    const [opponentSelections, setOpponentSelections] = useState<Record<string, number>>({});
 
     // Memoized Lookups
     const matchLocationMap = useMemo(() => {
@@ -74,8 +80,6 @@ export function TeamPathMap() {
         });
         return map;
     }, []);
-    
-    const allMatches = useMemo(() => [...MATCH_SCHEDULE, ...KNOCKOUT_SCHEDULE], []);
 
     const knockoutFlow = useMemo(() => getKnockoutFlow(), []);
 
@@ -234,6 +238,32 @@ export function TeamPathMap() {
         return Math.max(segMax, stopMax);
     }, [segments, stops]);
 
+    // Enhanced match info cache - pre-compute for all stops
+    const enhancedMatchInfoCache = useMemo(() => {
+        const cache: Record<string, EnhancedMatchInfo> = {};
+        const groupPosCode = `${selectedGroup}${selectedPos}`;
+
+        stops.forEach(stop => {
+            cache[stop.matchId] = resolveMatchOpponents(
+                stop.matchId,
+                selectedTeamId,
+                groupPosCode
+            );
+        });
+
+        return cache;
+    }, [selectedGroup, selectedPos, selectedTeamId, stops]);
+
+    // Handler to cycle through opponents
+    const handleOpponentCycle = (matchId: string, totalOpponents: number) => {
+        if (totalOpponents <= 1) return;
+
+        setOpponentSelections(prev => ({
+            ...prev,
+            [matchId]: ((prev[matchId] || 0) + 1) % totalOpponents
+        }));
+    };
+
     // Animation Loop
     const animate = (time: number) => {
         if (startTimeRef.current === undefined) {
@@ -287,6 +317,7 @@ export function TeamPathMap() {
             setSelectedGroup(info.group);
             setSelectedPos(info.position.toString());
         }
+        setOpponentSelections({}); // Reset opponent selections for new team
         handleReset();
     }, [selectedTeamId]);
 
@@ -350,53 +381,51 @@ export function TeamPathMap() {
         return flags;
     }, [currentTime, segments, stops, maxTime]);
 
-    // Current Match Card Info
-    const activeMatchInfo = useMemo(() => {
-        const activeStop = stops.find(s => currentTime >= s.startTime && currentTime < s.endTime && s.weight === Math.max(...stops.filter(st => currentTime >= st.startTime && currentTime < st.endTime).map(x => x.weight)));
-        
-        if (!activeStop) return null;
+    // Current Match Card Info - uses enhanced cache
+    const activeMatchData = useMemo(() => {
+        // Find the active stop with highest weight if multiple
+        const activeStops = stops.filter(s => currentTime >= s.startTime && currentTime < s.endTime);
+        if (activeStops.length === 0) return null;
 
-        const match = allMatches.find(m => m.id === activeStop.matchId);
-        if (!match) return null;
-        
-        // Opponent Logic
-        let opponent = "TBD";
-        const groupPosCode = `${selectedGroup}${selectedPos}`;
-        if (match.t1 === groupPosCode && match.t2 !== '?') opponent = match.t2;
-        else if (match.t2 === groupPosCode && match.t1 !== '?') opponent = match.t1;
-        else if (match.placeholderT1 && match.placeholderT2) {
-             // Basic placeholder logic
-             // If we are T1, opponent is T2
-             if (match.placeholderT1.includes(groupPosCode)) opponent = match.placeholderT2;
-             else if (match.placeholderT2.includes(groupPosCode)) opponent = match.placeholderT1;
-             else opponent = match.placeholderT2; // Guess
-        }
+        const activeStop = activeStops.reduce((best, curr) =>
+            curr.weight > best.weight ? curr : best
+        );
 
-        // Try to resolve team name if known
-        let opponentName = opponent;
-        
-        // Check if opponent is a valid group position code like "A1", "D2"
-        if (/^[A-L][1-4]$/.test(opponent)) {
-             const groupName = opponent[0];
-             const posIdx = parseInt(opponent[1]) - 1;
-             const group = OFFICIAL_GROUPS.find(g => g.name === groupName);
-             if (group && group.teams[posIdx]) {
-                 opponentName = group.teams[posIdx]!.name;
-             }
-        } else {
-             // Check if it is a team ID directly
-             const t = TEAMS.find(team => team.id === opponent);
-             if (t) opponentName = t.name;
-        }
+        const matchInfo = enhancedMatchInfoCache[activeStop.matchId];
+        if (!matchInfo) return null;
 
         return {
-            date: match.date,
-            time: match.time,
-            stadium: match.stadium,
-            opponent: opponentName,
-            round: activeStop.roundName
+            matchId: activeStop.matchId,
+            matchInfo,
+            weight: activeStop.weight
         };
-    }, [currentTime, stops, allMatches, selectedGroup, selectedPos]);
+    }, [currentTime, stops, enhancedMatchInfoCache]);
+
+    // Opponent highlight - shows opponent's location on map when cycling
+    const opponentHighlight = useMemo(() => {
+        if (!activeMatchData || activeMatchData.matchInfo.matchType !== 'probabilistic') return null;
+        if (activeMatchData.matchInfo.opponents.length === 0) return null;
+
+        const selectedIdx = opponentSelections[activeMatchData.matchId] || 0;
+        const selectedOpponent = activeMatchData.matchInfo.opponents[selectedIdx];
+        if (!selectedOpponent) return null;
+
+        // Find opponent's group position and first match location
+        const opponentInfo = getTeamGroupAndPosition(selectedOpponent.teamId);
+        if (!opponentInfo) return null;
+
+        const opponentMatches = getGroupMatchesForPosition(opponentInfo.group, opponentInfo.position);
+        if (opponentMatches.length === 0) return null;
+
+        const firstMatchCoords = matchLocationMap[opponentMatches[0]];
+        if (!firstMatchCoords) return null;
+
+        return {
+            coords: firstMatchCoords,
+            teamName: selectedOpponent.teamName,
+            flagUrl: selectedOpponent.flagUrl
+        };
+    }, [activeMatchData, opponentSelections, matchLocationMap]);
 
 
     return (
@@ -451,7 +480,10 @@ export function TeamPathMap() {
                         <ZoomableGroup center={[-96, 40]} zoom={1} minZoom={0.5} maxZoom={4}>
                             <defs>
                                 <marker id="arrow" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto" markerUnits="strokeWidth">
-                                    <path d="M0,0 L0,6 L6,3 z" fill="#2563EB" opacity="0.6" />
+                                    <path d="M0,0 L0,6 L6,3 z" fill="#2563EB" opacity="0.7" />
+                                </marker>
+                                <marker id="arrow-purple" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto" markerUnits="strokeWidth">
+                                    <path d="M0,0 L0,6 L6,3 z" fill="#7C3AED" opacity="0.7" />
                                 </marker>
                             </defs>
                             
@@ -475,7 +507,7 @@ export function TeamPathMap() {
                                 }
                             </Geographies>
 
-                            {/* Lines */}
+                            {/* Lines - solid for group stage, dashed for knockout */}
                             {segments.map(seg => {
                                 let offset = LINE_LENGTH_REF;
                                 if (currentTime >= seg.endTime) {
@@ -486,22 +518,27 @@ export function TeamPathMap() {
                                 } else {
                                     offset = LINE_LENGTH_REF;
                                 }
-                                
-                                const opacity = currentTime > seg.startTime ? 0.6 : 0;
-                                
+
+                                const opacity = currentTime > seg.startTime ? 0.7 : 0;
+                                const isGroupStage = seg.roundName === "Group Stage";
+
+                                // Different colors: blue for confirmed, purple for probabilistic
+                                const strokeColor = isGroupStage ? "#2563EB" : "#7C3AED";
+
                                 return (
                                     <Line
                                         key={seg.id}
                                         from={seg.start}
                                         to={seg.end}
-                                        stroke="#2563EB"
+                                        stroke={strokeColor}
                                         strokeWidth={Math.max(1.5, seg.weight * 6)}
                                         strokeOpacity={opacity}
                                         strokeLinecap="round"
-                                        markerEnd={offset < 50 ? "url(#arrow)" : undefined}
+                                        markerEnd={offset < 50 ? (isGroupStage ? "url(#arrow)" : "url(#arrow-purple)") : undefined}
                                         style={{
-                                            strokeDasharray: LINE_LENGTH_REF,
-                                            strokeDashoffset: offset,
+                                            // For knockout (probabilistic), use dashed pattern
+                                            strokeDasharray: isGroupStage ? LINE_LENGTH_REF : `8,4`,
+                                            strokeDashoffset: isGroupStage ? offset : 0,
                                             transition: isPlaying ? 'none' : 'stroke-dashoffset 0.1s linear'
                                         }}
                                     />
@@ -531,8 +568,8 @@ export function TeamPathMap() {
                             {activeFlags.map((flag, i) => (
                                 <Marker key={`flag-${flag.id}-${i}`} coordinates={flag.coords}>
                                     <g transform={`translate(-12, -24)`}>
-                                        <image 
-                                            href={teamFlag} 
+                                        <image
+                                            href={teamFlag}
                                             width={24 * (0.5 + 0.5 * flag.weight)} // Scale by weight
                                             height={16 * (0.5 + 0.5 * flag.weight)}
                                             preserveAspectRatio="none"
@@ -564,47 +601,168 @@ export function TeamPathMap() {
                                 </Marker>
                             ))}
 
+                            {/* Opponent Highlight - shows potential opponent's location */}
+                            {opponentHighlight && (
+                                <Marker coordinates={opponentHighlight.coords}>
+                                    <g transform="translate(-12, -32)">
+                                        {/* Glow effect */}
+                                        <circle cx="12" cy="24" r="20" fill="#7C3AED" opacity="0.15" />
+                                        <circle cx="12" cy="24" r="14" fill="#7C3AED" opacity="0.25" />
+                                        {/* Flag */}
+                                        {opponentHighlight.flagUrl && (
+                                            <image
+                                                href={opponentHighlight.flagUrl}
+                                                width={24}
+                                                height={16}
+                                                preserveAspectRatio="none"
+                                                style={{
+                                                    filter: 'drop-shadow(1px 2px 3px rgba(0,0,0,0.4))'
+                                                }}
+                                            />
+                                        )}
+                                        {/* Pole */}
+                                        <line x1="0" y1="0" x2="0" y2={24} stroke="#7C3AED" strokeWidth="2" />
+                                        {/* Label */}
+                                        <text
+                                            textAnchor="middle"
+                                            x="12"
+                                            y="42"
+                                            style={{
+                                                fontFamily: "system-ui",
+                                                fill: "#7C3AED",
+                                                fontSize: "9px",
+                                                fontWeight: 700,
+                                                textShadow: "0px 0px 4px white, 0px 0px 4px white"
+                                            }}
+                                        >
+                                            {opponentHighlight.teamName}
+                                        </text>
+                                    </g>
+                                </Marker>
+                            )}
+
                         </ZoomableGroup>
                     </ComposableMap>
                     
                     {/* Match Info Card Overlay */}
-                    {activeMatchInfo && (
-                        <div className="absolute top-4 right-4 bg-white/95 p-4 rounded-lg shadow-lg border border-gray-200 w-64 animate-in fade-in zoom-in duration-300">
-                             <h3 className="font-bold text-lg mb-2 text-blue-800 border-b pb-1">{activeMatchInfo.round}</h3>
-                             <div className="space-y-2 text-sm">
-                                 <div className="flex items-center gap-2">
-                                     <Calendar className="w-4 h-4 text-gray-500" />
-                                     <span>{activeMatchInfo.date}</span>
-                                 </div>
-                                 <div className="flex items-center gap-2">
-                                     <Clock className="w-4 h-4 text-gray-500" />
-                                     <span>{activeMatchInfo.time}</span>
-                                 </div>
-                                 <div className="flex items-center gap-2">
-                                     <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-[10px] font-bold text-gray-500">VS</div>
-                                     <span className="font-semibold">{activeMatchInfo.opponent}</span>
-                                 </div>
-                                 <div className="text-xs text-gray-500 mt-2 pt-2 border-t">
-                                     @{activeMatchInfo.stadium}
-                                 </div>
-                             </div>
-                        </div>
+                    {activeMatchData && (
+                        <Card className="absolute top-4 right-4 w-72 shadow-lg animate-in fade-in zoom-in duration-300">
+                            <CardHeader className="pb-2">
+                                <div className="flex items-center justify-between gap-2">
+                                    <CardTitle className="text-lg">{activeMatchData.matchInfo.round}</CardTitle>
+                                    <Badge variant={activeMatchData.matchInfo.matchType === 'scheduled' ? 'default' : 'secondary'}>
+                                        {activeMatchData.matchInfo.matchType === 'scheduled' ? 'Scheduled' : 'Most Likely'}
+                                    </Badge>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                {/* Date/Time row */}
+                                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                    <div className="flex items-center gap-1.5">
+                                        <Calendar className="h-4 w-4" />
+                                        <span>{activeMatchData.matchInfo.date}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <Clock className="h-4 w-4" />
+                                        <span>{activeMatchData.matchInfo.time}</span>
+                                    </div>
+                                </div>
+
+                                {/* Opponents display */}
+                                {activeMatchData.matchInfo.opponents.length > 0 && (() => {
+                                    const selectedIdx = opponentSelections[activeMatchData.matchId] || 0;
+                                    const selectedOpponent = activeMatchData.matchInfo.opponents[selectedIdx];
+                                    const hasMultiple = activeMatchData.matchInfo.opponents.length > 1;
+
+                                    return (
+                                        <div
+                                            className={cn(
+                                                "flex items-center gap-3 p-3 rounded-lg border bg-muted/50",
+                                                hasMultiple && "cursor-pointer hover:bg-muted transition-colors"
+                                            )}
+                                            onClick={hasMultiple ? () => handleOpponentCycle(activeMatchData.matchId, activeMatchData.matchInfo.opponents.length) : undefined}
+                                        >
+                                            {selectedOpponent.flagUrl && (
+                                                <img
+                                                    src={selectedOpponent.flagUrl}
+                                                    alt={selectedOpponent.teamName}
+                                                    className="w-10 h-6 object-cover rounded border shadow-sm"
+                                                />
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-semibold truncate">{selectedOpponent.teamName}</div>
+                                                {activeMatchData.matchInfo.matchType === 'probabilistic' && (
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {selectedOpponent.probability.toFixed(1)}% probability
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {hasMultiple && (
+                                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                    <span>{selectedIdx + 1}/{activeMatchData.matchInfo.opponents.length}</span>
+                                                    <ChevronRight className="h-3 w-3" />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Top 3 opponents list for probabilistic matches */}
+                                {activeMatchData.matchInfo.matchType === 'probabilistic' && activeMatchData.matchInfo.opponents.length > 1 && (
+                                    <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t">
+                                        <div className="font-medium text-foreground">Top opponents:</div>
+                                        {activeMatchData.matchInfo.opponents.map((opp, idx) => (
+                                            <div
+                                                key={opp.teamId}
+                                                className={cn(
+                                                    "flex justify-between",
+                                                    idx === (opponentSelections[activeMatchData.matchId] || 0) && "font-medium text-foreground"
+                                                )}
+                                            >
+                                                <span>{opp.teamName}</span>
+                                                <span>{opp.probability.toFixed(1)}%</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Stadium */}
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-2 border-t">
+                                    <MapPin className="h-3 w-3" />
+                                    <span>{activeMatchData.matchInfo.stadium}</span>
+                                </div>
+                            </CardContent>
+                        </Card>
                     )}
 
-                     {/* Legend */}
-                    <div className="absolute bottom-4 left-4 bg-white/90 p-3 rounded-md shadow text-xs pointer-events-none">
-                        <h4 className="font-bold mb-2">Path Probability</h4>
-                        <div className="flex flex-col gap-2">
-                             <div className="flex items-center gap-2">
-                                <div className="h-1 bg-blue-600 opacity-60 w-8 rounded" style={{ height: '6px' }}></div>
-                                <span>100% (Confirmed)</span>
-                             </div>
-                             <div className="flex items-center gap-2">
-                                <div className="h-1 bg-blue-600 opacity-60 w-8 rounded" style={{ height: '2px' }}></div>
-                                <span>33% (Group Outcome)</span>
-                             </div>
-                        </div>
-                    </div>
+                    {/* Legend */}
+                    <Card className="absolute bottom-4 left-4 w-52 shadow-md">
+                        <CardContent className="p-3 space-y-2">
+                            <h4 className="font-semibold text-sm text-foreground">Path Legend</h4>
+                            <div className="space-y-2 text-xs">
+                                {/* Group stage - solid blue */}
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-1.5 bg-blue-600 rounded" />
+                                    <span className="text-foreground">Group Stage (100%)</span>
+                                </div>
+                                {/* Knockout - dashed purple */}
+                                <div className="flex items-center gap-2">
+                                    <div
+                                        className="w-8 h-1.5 rounded"
+                                        style={{
+                                            background: 'repeating-linear-gradient(90deg, #7C3AED 0, #7C3AED 4px, transparent 4px, transparent 8px)'
+                                        }}
+                                    />
+                                    <span className="text-foreground">Knockout (Probabilistic)</span>
+                                </div>
+                                {/* Weight explanation */}
+                                <div className="flex items-center gap-2 pt-1 border-t">
+                                    <div className="w-8 h-0.5 bg-purple-600/60 rounded" />
+                                    <span className="text-muted-foreground">Thinner = Lower probability</span>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
                 </div>
             </CardContent>
         </Card>
