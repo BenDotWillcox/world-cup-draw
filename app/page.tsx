@@ -1,3 +1,6 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DrawVisualizer } from "@/components/draw/DrawVisualizer";
 import { MonteCarloStats } from "@/components/draw/MonteCarloStats";
@@ -5,6 +8,15 @@ import { TeamPathMap } from "@/components/draw/TeamPathMap";
 import { DrawProvider } from "@/components/draw/DrawContext";
 
 export default function Home() {
+  const activeTab = useSyncExternalStore(subscribeToTab, getTabSnapshot, getServerTabSnapshot);
+
+  const changeTab = (tab: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState(null, "", url);
+    window.dispatchEvent(new Event("world-cup-tab-change"));
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground p-8 font-sans">
       <main className="max-w-7xl mx-auto space-y-8">
@@ -18,11 +30,11 @@ export default function Home() {
         </div>
 
         <DrawProvider>
-          <Tabs defaultValue="visualizer" className="w-full">
-            <TabsList className="grid w-full max-w-md grid-cols-3">
-              <TabsTrigger value="visualizer">Visual Draw</TabsTrigger>
-              <TabsTrigger value="stats">Monte Carlo Stats</TabsTrigger>
-              <TabsTrigger value="map">Path Visualizer</TabsTrigger>
+          <Tabs value={activeTab} onValueChange={changeTab} className="w-full">
+            <TabsList className="grid h-auto min-h-9 w-full max-w-xl grid-cols-3">
+              <TabsTrigger className="h-full whitespace-normal py-2 text-xs sm:text-sm" value="visualizer">Visual Draw</TabsTrigger>
+              <TabsTrigger className="h-full whitespace-normal py-2 text-xs sm:text-sm" value="stats">Stats (Reference)</TabsTrigger>
+              <TabsTrigger className="h-full whitespace-normal py-2 text-xs sm:text-sm" value="map">Paths (Official Draw)</TabsTrigger>
             </TabsList>
             
             <TabsContent value="visualizer" className="mt-6">
@@ -41,4 +53,22 @@ export default function Home() {
       </main>
     </div>
   );
+}
+
+function subscribeToTab(onStoreChange: () => void) {
+  window.addEventListener("popstate", onStoreChange);
+  window.addEventListener("world-cup-tab-change", onStoreChange);
+  return () => {
+    window.removeEventListener("popstate", onStoreChange);
+    window.removeEventListener("world-cup-tab-change", onStoreChange);
+  };
+}
+
+function getTabSnapshot() {
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  return tab === "stats" || tab === "map" ? tab : "visualizer";
+}
+
+function getServerTabSnapshot() {
+  return "visualizer";
 }

@@ -1,6 +1,8 @@
 import { OFFICIAL_GROUPS } from '@/lib/data/official-draw';
-import { KNOCKOUT_SCHEDULE, THIRD_PLACE_SLOTS } from '@/lib/data/knockout-schedule';
+import { KNOCKOUT_SCHEDULE } from '@/lib/data/knockout-schedule';
 import { ELO_RATINGS, HOST_TEAM_IDS, HOST_ELO_BONUS } from '@/lib/data/elo-ratings';
+import { getAnnexeCThirdPlaceGroups } from '@/lib/data/third-place-combinations';
+import type { RandomSource } from '@/lib/engine/random';
 
 /**
  * Full tournament Monte Carlo simulation using Elo ratings.
@@ -11,8 +13,7 @@ import { ELO_RATINGS, HOST_TEAM_IDS, HOST_ELO_BONUS } from '@/lib/data/elo-ratin
 
 // ---- Constants ----
 
-const ROUNDS = ['R32', 'R16', 'QF', 'SF', 'F'] as const;
-type Round = typeof ROUNDS[number];
+type Round = 'R32' | 'R16' | 'QF' | 'SF' | 'F';
 
 const DRAW_MARGIN = 60;
 
@@ -36,67 +37,27 @@ for (const [id, rating] of Object.entries(ELO_RATINGS)) {
 // Knockout Elos: hosts get bonus (simplification — most venues are in host countries)
 const KNOCKOUT_ELOS = GROUP_ELOS; // same bonus logic
 
-// Pre-parse knockout bracket structure
-interface R32Match {
-  id: string;
-  placeholderT1: string;
-  placeholderT2: string;
-}
-
-// Build bracket flow: matchId → { nextMatchId, side ('T1' | 'T2') }
-interface BracketNext {
-  matchId: string;
-  side: 'T1' | 'T2';
-}
-
-const BRACKET_FLOW: Record<string, BracketNext> = {};
-for (const m of KNOCKOUT_SCHEDULE) {
-  if (m.placeholderT1?.startsWith('W')) {
-    const prevId = 'M' + m.placeholderT1.substring(1);
-    BRACKET_FLOW[prevId] = { matchId: m.id, side: 'T1' };
-  }
-  if (m.placeholderT2?.startsWith('W')) {
-    const prevId = 'M' + m.placeholderT2.substring(1);
-    BRACKET_FLOW[prevId] = { matchId: m.id, side: 'T2' };
-  }
-}
-
-// R32 matches grouped by placeholder type
-const R32_MATCHES: R32Match[] = KNOCKOUT_SCHEDULE
-  .filter(m => {
-    const num = parseInt(m.id.slice(1));
-    return num >= 73 && num <= 88;
-  })
-  .map(m => ({
-    id: m.id,
-    placeholderT1: m.placeholderT1 || '',
-    placeholderT2: m.placeholderT2 || '',
-  }));
-
-// Third place slot info
-const THIRD_PLACE_MATCH_IDS = Object.keys(THIRD_PLACE_SLOTS);
-const THIRD_PLACE_ALLOWED: Record<string, Set<string>> = {};
-for (const [matchId, groups] of Object.entries(THIRD_PLACE_SLOTS)) {
-  THIRD_PLACE_ALLOWED[matchId] = new Set(groups);
-}
-
 // ---- Simulation helpers ----
 
 /** Simulate a group stage match. Returns points for [teamA, teamB]. */
-function simulateGroupMatchPoints(eloA: number, eloB: number): [number, number] {
+function simulateGroupMatchPoints(
+  eloA: number,
+  eloB: number,
+  random: RandomSource,
+): [number, number] {
   const pWinA = 1 / (1 + Math.pow(10, (eloB - eloA + DRAW_MARGIN) / 400));
   const pWinB = 1 / (1 + Math.pow(10, (eloA - eloB + DRAW_MARGIN) / 400));
 
-  const r = Math.random();
+  const r = random();
   if (r < pWinA) return [3, 0];
   if (r < pWinA + (1 - pWinA - pWinB)) return [1, 1];
   return [0, 3];
 }
 
 /** Simulate a knockout match. Returns winner's teamId. */
-function simulateKnockout(eloA: number, eloB: number): 0 | 1 {
+function simulateKnockout(eloA: number, eloB: number, random: RandomSource): 0 | 1 {
   const pWinA = 1 / (1 + Math.pow(10, (eloB - eloA) / 400));
-  return Math.random() < pWinA ? 0 : 1;
+  return random() < pWinA ? 0 : 1;
 }
 
 // ---- Group stage simulation ----
@@ -110,7 +71,7 @@ interface GroupStandings {
   group: string;
 }
 
-function simulateGroupStage(group: GroupInfo): GroupStandings {
+function simulateGroupStage(group: GroupInfo, random: RandomSource): GroupStandings {
   const ids = group.teamIds;
   const points = [0, 0, 0, 0];
 
@@ -121,16 +82,20 @@ function simulateGroupStage(group: GroupInfo): GroupStandings {
     const [ptsA, ptsB] = simulateGroupMatchPoints(
       GROUP_ELOS[ids[a]] ?? 1500,
       GROUP_ELOS[ids[b]] ?? 1500,
+      random,
     );
     points[a] += ptsA;
     points[b] += ptsB;
   }
 
-  // Sort by points descending, then random tiebreak
+  // Pre-compute random tie keys so the comparator remains transitive and
+  // deterministic for a given random stream.
   const indices = [0, 1, 2, 3];
+  const tieKeys = indices.map(() => random());
   indices.sort((a, b) => {
     if (points[b] !== points[a]) return points[b] - points[a];
-    return Math.random() - 0.5; // random tiebreak
+    if (tieKeys[a] !== tieKeys[b]) return tieKeys[a] - tieKeys[b];
+    return a - b;
   });
 
   return {
@@ -149,136 +114,34 @@ interface ThirdPlaceTeam {
 }
 
 /**
- * Determine which 8 of 12 third-place teams advance and assign to R32 slots.
- * Returns a map: matchId → teamId for each third-place slot.
+ * Determine which 8 of 12 third-place teams advance, then apply the exact
+ * FIFA Annexe C assignment for that combination of qualifying groups.
  */
 function allocateThirdPlace(
-  allThirdPlace: ThirdPlaceTeam[]
-): Record<string, string> | null {
-  // Sort descending by points, random tiebreak
+  allThirdPlace: ThirdPlaceTeam[],
+  random: RandomSource,
+): Record<string, string> {
+  // Generate tie keys before sorting so comparisons are stable/transitive.
+  const tieKeys = new Map(allThirdPlace.map(team => [team.group, random()]));
   allThirdPlace.sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points;
-    return Math.random() - 0.5;
+    const tieDifference = tieKeys.get(a.group)! - tieKeys.get(b.group)!;
+    if (tieDifference !== 0) return tieDifference;
+    return a.group < b.group ? -1 : a.group > b.group ? 1 : 0;
   });
 
   // Top 8 advance
   const advancing = allThirdPlace.slice(0, 8);
-  const advancingGroups = new Set(advancing.map(t => t.group));
+  const teamByGroup = new Map(advancing.map(team => [team.group, team.teamId]));
+  const groupByMatch = getAnnexeCThirdPlaceGroups(advancing.map(team => team.group));
 
-  // Assign to slots using greedy random with backtracking
-  const assignment: Record<string, string> = {};
-  const assigned = new Set<string>(); // groups already assigned
-
-  // Shuffle slot order for randomness
-  const slots = [...THIRD_PLACE_MATCH_IDS];
-  for (let i = slots.length - 1; i > 0; i--) {
-    const j = (Math.random() * (i + 1)) | 0;
-    [slots[i], slots[j]] = [slots[j], slots[i]];
-  }
-
-  // Try to assign using recursive backtracking
-  function backtrack(slotIdx: number): boolean {
-    if (slotIdx >= slots.length) return assigned.size === 8;
-
-    const matchId = slots[slotIdx];
-    const allowed = THIRD_PLACE_ALLOWED[matchId];
-
-    // Get candidates: advancing teams whose group is allowed and not yet assigned
-    const candidates = advancing.filter(
-      t => allowed.has(t.group) && !assigned.has(t.group)
-    );
-
-    // Shuffle candidates for randomness
-    for (let i = candidates.length - 1; i > 0; i--) {
-      const j = (Math.random() * (i + 1)) | 0;
-      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
-    }
-
-    for (const candidate of candidates) {
-      assignment[matchId] = candidate.teamId;
-      assigned.add(candidate.group);
-
-      if (backtrack(slotIdx + 1)) return true;
-
-      delete assignment[matchId];
-      assigned.delete(candidate.group);
-    }
-
-    // This slot gets no one (only 8 teams for 8 slots, but constraint mismatch)
-    // Try skipping — shouldn't happen with correct FIFA constraints, but safety
-    return backtrack(slotIdx + 1);
-  }
-
-  if (backtrack(0)) return assignment;
-  return null; // failed — discard this iteration
-}
-
-// ---- Knockout bracket simulation ----
-
-/**
- * Simulate the full knockout bracket.
- * Returns the teamId occupying each match slot after simulation.
- */
-function simulateKnockoutBracket(
-  groupResults: GroupStandings[],
-  thirdPlaceAssignment: Record<string, string>,
-): Record<string, string> {
-  // matchId → winning teamId
-  const matchWinners: Record<string, string> = {};
-  // matchId → [teamIdT1, teamIdT2] (the two teams in the match)
-  const matchTeams: Record<string, [string, string]> = {};
-
-  // Resolve a placeholder to a teamId
-  function resolve(placeholder: string): string {
-    // Direct group position: "1D", "2A"
-    const directMatch = placeholder.match(/^([12])([A-L])$/);
-    if (directMatch) {
-      const pos = parseInt(directMatch[1]) - 1; // 0-based
-      const grp = directMatch[2];
-      const standings = groupResults.find(g => g.group === grp)!;
-      return standings.positions[pos];
-    }
-
-    // Third place: "3_M81"
-    if (placeholder.startsWith('3_')) {
-      const matchId = placeholder.substring(2);
-      return thirdPlaceAssignment[matchId] || 'UNKNOWN';
-    }
-
-    // Winner: "W73"
-    if (placeholder.startsWith('W')) {
-      const matchId = 'M' + placeholder.substring(1);
-      return matchWinners[matchId] || 'UNKNOWN';
-    }
-
-    // Loser: "L101" (for 3rd place match)
-    if (placeholder.startsWith('L')) {
-      const matchId = 'M' + placeholder.substring(1);
-      const teams = matchTeams[matchId];
-      const winner = matchWinners[matchId];
-      if (teams && winner) {
-        return teams[0] === winner ? teams[1] : teams[0];
-      }
-      return 'UNKNOWN';
-    }
-
-    return 'UNKNOWN';
-  }
-
-  // Process matches in order (they're already sorted by round in KNOCKOUT_SCHEDULE)
-  for (const match of KNOCKOUT_SCHEDULE) {
-    const t1 = resolve(match.placeholderT1 || '');
-    const t2 = resolve(match.placeholderT2 || '');
-
-    matchTeams[match.id] = [t1, t2];
-
-    const elo1 = KNOCKOUT_ELOS[t1] ?? 1500;
-    const elo2 = KNOCKOUT_ELOS[t2] ?? 1500;
-    const winnerIdx = simulateKnockout(elo1, elo2);
-    matchWinners[match.id] = winnerIdx === 0 ? t1 : t2;
-  }
-
-  return matchWinners;
+  return Object.fromEntries(
+    Object.entries(groupByMatch).map(([matchId, group]) => {
+      const teamId = teamByGroup.get(group);
+      if (!teamId) throw new Error(`Annexe C assigned non-qualifying Group ${group} to ${matchId}.`);
+      return [matchId, teamId];
+    }),
+  );
 }
 
 // ---- Result types ----
@@ -294,6 +157,10 @@ export interface TournamentSimResult {
   matchOpponents: Record<string, Record<string, Record<string, number>>>;
   /** Number of successful iterations */
   iterations: number;
+  /** Total simulation attempts, including discarded iterations */
+  attempts: number;
+  /** Attempts discarded before producing a complete tournament result */
+  rejectedIterations: number;
 }
 
 // Match ID ranges for each round
@@ -309,7 +176,10 @@ function getRound(matchId: string): Round | null {
 
 // ---- Main simulation ----
 
-export function runTournamentSimulation(iterations: number): TournamentSimResult {
+export function runTournamentSimulation(
+  iterations: number,
+  random: RandomSource = Math.random,
+): TournamentSimResult {
   // All team IDs
   const allTeamIds = GROUPS.flatMap(g => g.teamIds);
 
@@ -327,10 +197,13 @@ export function runTournamentSimulation(iterations: number): TournamentSimResult
   }
 
   let successCount = 0;
+  let attempts = 0;
+  const rejectedIterations = 0;
 
   while (successCount < iterations) {
+    attempts++;
     // 1. Simulate all 12 groups
-    const groupResults = GROUPS.map(simulateGroupStage);
+    const groupResults = GROUPS.map(group => simulateGroupStage(group, random));
 
     // 2. Collect third-place teams
     const thirdPlaceTeams: ThirdPlaceTeam[] = groupResults.map(g => ({
@@ -340,8 +213,7 @@ export function runTournamentSimulation(iterations: number): TournamentSimResult
     }));
 
     // 3. Allocate third-place teams to knockout slots
-    const thirdPlaceAssignment = allocateThirdPlace(thirdPlaceTeams);
-    if (!thirdPlaceAssignment) continue; // rare constraint failure, retry
+    const thirdPlaceAssignment = allocateThirdPlace(thirdPlaceTeams, random);
 
     // 4. Record group finish positions
     for (const g of groupResults) {
@@ -350,17 +222,7 @@ export function runTournamentSimulation(iterations: number): TournamentSimResult
       }
     }
 
-    // 5. Determine which teams advance to R32
-    const advancingTeams = new Set<string>();
-    for (const g of groupResults) {
-      advancingTeams.add(g.positions[0]); // 1st
-      advancingTeams.add(g.positions[1]); // 2nd
-    }
-    for (const teamId of Object.values(thirdPlaceAssignment)) {
-      advancingTeams.add(teamId); // advancing 3rd place
-    }
-
-    // 6. Simulate knockout bracket
+    // 5. Simulate knockout bracket
     // We need to track match teams, not just winners
     // Re-implement inline to capture per-match participants
     const matchWinners: Record<string, string> = {};
@@ -376,7 +238,7 @@ export function runTournamentSimulation(iterations: number): TournamentSimResult
       }
       if (placeholder.startsWith('3_')) {
         const matchId = placeholder.substring(2);
-        return thirdPlaceAssignment![matchId] || 'UNKNOWN';
+        return thirdPlaceAssignment[matchId] || 'UNKNOWN';
       }
       if (placeholder.startsWith('W')) {
         const matchId = 'M' + placeholder.substring(1);
@@ -399,11 +261,11 @@ export function runTournamentSimulation(iterations: number): TournamentSimResult
 
       const elo1 = KNOCKOUT_ELOS[t1] ?? 1500;
       const elo2 = KNOCKOUT_ELOS[t2] ?? 1500;
-      const winnerIdx = simulateKnockout(elo1, elo2);
+      const winnerIdx = simulateKnockout(elo1, elo2, random);
       matchWinners[match.id] = winnerIdx === 0 ? t1 : t2;
     }
 
-    // 7. Record knockout stats
+    // 6. Record knockout stats
     for (const match of KNOCKOUT_SCHEDULE) {
       const round = getRound(match.id);
       if (!round) continue; // skip 3rd place match
@@ -450,5 +312,7 @@ export function runTournamentSimulation(iterations: number): TournamentSimResult
     roundOpponents,
     matchOpponents,
     iterations: successCount,
+    attempts,
+    rejectedIterations,
   };
 }

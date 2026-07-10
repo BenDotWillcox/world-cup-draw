@@ -5,6 +5,7 @@ import { type BracketPathNode, type CollapsedThirdPlace } from "@/lib/engine/pat
 import { resolvePath } from "@/lib/utils";
 import { PATH_COLORS } from "./PathLegend";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatEstimateTitle } from "@/lib/statistics/uncertainty";
 
 type PositionType = 1 | 2 | 3 | "group";
 
@@ -57,6 +58,9 @@ function MatchNode({ node, color, position, isHovered, isSelected, onHover, onCl
   const active = isHovered || isSelected;
   const topOpponent = node.opponents[0] || null;
   const isGroup = position === "group";
+  const estimateTitle = topOpponent?.probabilityCount != null && topOpponent.probabilityTrials != null
+    ? formatEstimateTitle(topOpponent.probabilityCount, topOpponent.probabilityTrials)
+    : undefined;
 
   return (
     <div
@@ -85,7 +89,13 @@ function MatchNode({ node, color, position, isHovered, isSelected, onHover, onCl
           )}
           <span className="truncate text-muted-foreground">{topOpponent.teamName}</span>
           {!isGroup && topOpponent.probability != null && (
-            <span className="text-[10px] font-medium shrink-0 ml-auto" style={{ color }}>
+            <span
+              className="text-[10px] font-medium shrink-0 ml-auto"
+              style={{ color }}
+              title={estimateTitle}
+              aria-label={estimateTitle ? `${topOpponent.teamName}: ${estimateTitle}` : undefined}
+              tabIndex={estimateTitle ? 0 : undefined}
+            >
               {topOpponent.probability.toFixed(0)}%
             </span>
           )}

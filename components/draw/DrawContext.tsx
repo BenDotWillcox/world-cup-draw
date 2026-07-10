@@ -5,6 +5,16 @@ import { Team, Group, APPENDIX_B_POSITIONS } from '@/types/draw';
 import { initializeGroups, canPlaceTeamInGroup, canPlaceTeamInPot1, validateConstraintCounts, completeCurrentDraw } from '@/lib/engine/draw-logic';
 import { TEAMS } from '@/lib/data/teams';
 import { OFFICIAL_GROUPS } from '@/lib/data/official-draw';
+import {
+  DEFAULT_VISUAL_DRAW_SEED,
+} from '@/lib/data/simulation-metadata';
+import { createSeededRandom } from '@/lib/engine/random';
+import {
+  resolveVisualDrawSeed,
+  shouldPreserveVisualDrawSeed,
+  type VisualDrawSeedSource,
+} from '@/lib/visual-draw-seed';
+import { createDrawShareUrl, createUnsharedDrawUrl } from '@/lib/export-data';
 
 export type DrawStep = {
   team: Team;
@@ -33,6 +43,8 @@ interface DrawContextType {
   isFastForwarding: boolean;
   isOfficialDraw: boolean;
   loadOfficialDraw: () => void;
+  seed: string;
+  setSeed: (seed: string) => void;
 }
 
 const DrawContext = createContext<DrawContextType | undefined>(undefined);
@@ -58,12 +70,42 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [isFastForwarding, setIsFastForwarding] = useState(false);
   const [isOfficialDraw, setIsOfficialDraw] = useState(false);
+  const [seed, setSeedState] = useState('');
+  const [seedSource, setSeedSource] = useState<VisualDrawSeedSource>('automatic');
   const isProcessingRef = useRef(false);
   const isRunningRef = useRef(isRunning);
+  const randomRef = useRef(createSeededRandom('uninitialized-visual-draw'));
+
+  useEffect(() => {
+    const sharedSeed = new URLSearchParams(window.location.search).get('seed')?.trim();
+    if (!sharedSeed) return;
+
+    // Older builds wrote this fixed default into every URL. Treat it as an
+    // automatic draw so those pages migrate to the new fresh-seed behavior.
+    if (sharedSeed === DEFAULT_VISUAL_DRAW_SEED) {
+      const url = createUnsharedDrawUrl(window.location.href);
+      window.history.replaceState(null, '', url);
+      window.dispatchEvent(new Event('world-cup-configuration-change'));
+      return;
+    }
+
+    setSeedState(sharedSeed.slice(0, 128));
+    setSeedSource('shared');
+  }, []);
+
+  const setSeed = useCallback((nextSeed: string) => {
+    const trimmedSeed = nextSeed.slice(0, 128);
+    setSeedState(trimmedSeed);
+    setSeedSource(trimmedSeed.trim() ? 'custom' : 'automatic');
+  }, []);
 
   // --- ACTIONS ---
 
   const startDraw = useCallback(() => {
+    const normalizedSeed = resolveVisualDrawSeed(seed, seedSource);
+    if (normalizedSeed !== seed) setSeedState(normalizedSeed);
+    randomRef.current = createSeededRandom(normalizedSeed);
+
     const cleanGroups = initializeGroups();
     const mex = TEAMS.find(t => t.id === 'MEX');
     const can = TEAMS.find(t => t.id === 'CAN');
@@ -85,9 +127,19 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     // Set available teams for Pot 1 (excluding hosts)
     const pot1Teams = TEAMS.filter(t => t.pot === 1 && !t.isHost);
     setAvailableTeams(pot1Teams);
-  }, []);
+  }, [seed, seedSource]);
 
   const reset = useCallback(() => {
+    const keepFixedSeed = shouldPreserveVisualDrawSeed(seedSource);
+    if (!keepFixedSeed) {
+      setSeedState('');
+      setSeedSource('automatic');
+    }
+
+    const url = createUnsharedDrawUrl(window.location.href);
+    window.history.replaceState(null, '', url);
+    window.dispatchEvent(new Event('world-cup-configuration-change'));
+
     setIsRunning(false);
     setScanningGroupIndex(null);
     setScanningStatus(null);
@@ -108,9 +160,13 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     
     setCurrentPot(1);
     setAvailableTeams([]); 
-  }, []);
+  }, [seedSource]);
 
   const loadOfficialDraw = useCallback(() => {
+    const url = createDrawShareUrl(window.location.href, '', 'official');
+    window.history.replaceState(null, '', url);
+    window.dispatchEvent(new Event('world-cup-configuration-change'));
+
     setIsRunning(false);
     isRunningRef.current = false;
     isProcessingRef.current = false;
@@ -131,6 +187,12 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     setAvailableTeams([]);
     setIsOfficialDraw(true);
   }, []);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('scenario') === 'official') {
+      loadOfficialDraw();
+    }
+  }, [loadOfficialDraw]);
 
   const advancePot = useCallback(() => {
     if (currentPot === 4) {
@@ -175,7 +237,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     // Pots 2, 3, 4 Logic
     // Combine remaining teams for validation
     const remainingInPot = availableTeams.filter(t => t.id !== team.id);
-    let allRemainingTeams = [...remainingInPot];
+    const allRemainingTeams = [...remainingInPot];
 
     const isTeamPlaced = (tId: string) => groups.some(g => g.teams.some(gt => gt?.id === tId));
 
@@ -231,7 +293,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
       
       setIsOfficialDraw(false);
       
-  }, [currentPot, currentTeam]);
+  }, [currentTeam]);
 
   const removeTeam = useCallback((team: Team, groupIndex: number) => {
       // Find position to clear
@@ -309,7 +371,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
 
     try {
       // 1. Draw Random Team
-      const randomIndex = Math.floor(Math.random() * availableTeams.length);
+      const randomIndex = Math.floor(randomRef.current() * availableTeams.length);
       const team = availableTeams[randomIndex];
       
       console.log(`Drawing team: ${team.name} (Pot ${currentPot})`);
@@ -337,7 +399,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
       } else {
           // Pots 2, 3, 4: FAST Constraint Validation Logic
           // Combine all remaining teams
-          let allRemainingTeams = [...remainingInPot];
+          const allRemainingTeams = [...remainingInPot];
           // Use currentPot to guess future, but safeguard against going back? 
           // If we are placing a Pot 2 team, we need to consider Pot 3 and 4 teams.
           // If availableTeams has teams from Pot 2, 3, 4 mixed, remainingInPot has them.
@@ -450,7 +512,7 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     const unplacedTeams = TEAMS.filter(t => !placedTeamIds.has(t.id));
     
     try {
-        const completedGroups = completeCurrentDraw(groups, unplacedTeams);
+        const completedGroups = completeCurrentDraw(groups, unplacedTeams, randomRef.current);
         setGroups(completedGroups);
         
         // Update state to "Finished"
@@ -488,7 +550,9 @@ export const DrawProvider = ({ children }: { children: ReactNode }) => {
     fastForward,
     isFastForwarding,
     isOfficialDraw,
-    loadOfficialDraw
+    loadOfficialDraw,
+    seed,
+    setSeed,
   };
 
   return <DrawContext.Provider value={value}>{children}</DrawContext.Provider>;

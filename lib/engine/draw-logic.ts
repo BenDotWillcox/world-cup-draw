@@ -1,54 +1,46 @@
-import { Team, Group, APPENDIX_B_POSITIONS, GROUP_NAMES } from '@/types/draw';
+import { Team, Group, APPENDIX_B_POSITIONS, GROUP_NAMES, getPossibleConfederations } from '@/types/draw';
 import { TEAMS } from '@/lib/data/teams';
+import type { RandomSource } from '@/lib/engine/random';
 
 // Helper to clone groups - used only for initial setup or when branching needs isolation
 const cloneGroups = (groups: Group[]): Group[] => {
   return groups.map(g => ({ ...g, teams: [...g.teams] }));
 };
 
+const shuffledCopy = <T>(values: T[], random: RandomSource): T[] => {
+  const shuffled = [...values];
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+};
+
+const HOST_GROUP_INDEX: Record<string, number> = {
+  MEX: 0,
+  CAN: 1,
+  USA: 3,
+};
+
 // OPTIMIZED: Check if a team can go into a group without allocations
 export const canPlaceTeamInGroup = (team: Team, group: Group): boolean => {
-  // 1. UEFA Constraint: Max 2 UEFA teams
-  let uefaCount = 0;
-  for (let i = 0; i < 4; i++) {
-      if (group.teams[i]?.confederation === 'UEFA') {
-          uefaCount++;
-      }
-  }
-  
-  if (team.confederation === 'UEFA') {
-    if (uefaCount >= 2) return false;
-  } else {
-    // 2. General Constraint: Max 1 team per confederation (non-UEFA)
-    const teamConfeds = team.potentialConfederations;
+  const teamConfeds = getPossibleConfederations(team);
+  const existingConfeds = group.teams
+    .filter((existing): existing is Team => existing !== null)
+    .map(getPossibleConfederations);
 
-    if (!teamConfeds) {
-        // Fast path for standard teams
-        const confed = team.confederation;
-        for (let i = 0; i < 4; i++) {
-            const existing = group.teams[i];
-            if (!existing) continue;
-            
-            if (existing.potentialConfederations) {
-                if (existing.potentialConfederations.includes(confed)) return false;
-            } else {
-                if (existing.confederation === confed) return false;
-            }
-        }
-    } else {
-        // Slow path for placeholders
-        for (const confed of teamConfeds) {
-            if (confed === 'UEFA') continue;
-            
-            for (let i = 0; i < 4; i++) {
-                const existing = group.teams[i];
-                if (!existing) continue;
-                
-                const existingConfeds = existing.potentialConfederations || [existing.confederation];
-                if (existingConfeds.includes(confed)) return false;
-            }
-        }
-    }
+  // A playoff placeholder must be valid for every team that could eventually
+  // win that path. Treat possible confederations conservatively in both
+  // directions: at most two possible UEFA teams, and no repeated non-UEFA
+  // confederation.
+  if (teamConfeds.includes('UEFA')) {
+    const possibleUefaCount = existingConfeds.filter(confeds => confeds.includes('UEFA')).length;
+    if (possibleUefaCount >= 2) return false;
+  }
+
+  for (const confed of teamConfeds) {
+    if (confed === 'UEFA') continue;
+    if (existingConfeds.some(confeds => confeds.includes(confed))) return false;
   }
 
   return true;
@@ -62,9 +54,6 @@ export const initializeGroups = (): Group[] => {
   }));
 };
 
-// Helper to check if team is one of the constrained pairs
-const isConstrainedPot1Team = (id: string) => ['ESP', 'ARG', 'FRA', 'ENG'].includes(id);
-
 // Pot 1 Live Logic: Check if placing 'team' in 'group' is valid given the constraints
 export const canPlaceTeamInPot1 = (
   team: Team, 
@@ -74,6 +63,16 @@ export const canPlaceTeamInPot1 = (
     // 1. Basic placement check (Hosts, empty slot)
     const group = currentGroups[targetGroupIndex];
     if (group.teams[0] !== null) return false; // Occupied
+
+    const fixedHostGroup = HOST_GROUP_INDEX[team.id];
+    if (fixedHostGroup !== undefined && fixedHostGroup !== targetGroupIndex) return false;
+
+    const reservedHost = Object.entries(HOST_GROUP_INDEX).find(([, groupIndex]) => groupIndex === targetGroupIndex)?.[0];
+    if (reservedHost && reservedHost !== team.id) return false;
+
+    // `completeCurrentDraw` can receive a sparse state with later-pot teams
+    // already present. Pot 1 placement must remain compatible with them.
+    if (!canPlaceTeamInGroup(team, group)) return false;
 
     // 3. Side Logic for ESP/ARG/FRA/ENG
     const LEFT_SIDE_INDICES = [3, 4, 5, 6, 7, 8]; // D, E, F, G, H, I
@@ -165,7 +164,11 @@ export const canPlaceTeamInPot1 = (
 };
 
 // Pot 1 Logic (Pre-calc version - kept for fallback or simulation)
-export const drawPot1 = (groups: Group[], pot1Teams: Team[]): Group[] => {
+export const drawPot1 = (
+  groups: Group[],
+  pot1Teams: Team[],
+  random: RandomSource = Math.random,
+): Group[] => {
   const newGroups = cloneGroups(groups);
   
   const LEFT_SIDE_INDICES = [3, 4, 5, 6, 7, 8];
@@ -180,14 +183,12 @@ export const drawPot1 = (groups: Group[], pot1Teams: Team[]): Group[] => {
   if (canada) newGroups[1].teams[0] = canada;
   if (usa)    newGroups[3].teams[0] = usa;
 
-  let assignedIndices = [0, 1, 3];
-
-  const shuffle = <T>(array: T[]) => array.sort(() => Math.random() - 0.5);
+  const assignedIndices = [0, 1, 3];
 
   const assignToSide = (team: Team, allowedIndices: number[]) => {
     const valid = allowedIndices.filter(i => !assignedIndices.includes(i));
     if (valid.length === 0) throw new Error("No slots in requested side");
-    const picked = shuffle(valid)[0];
+    const picked = shuffledCopy(valid, random)[0];
     newGroups[picked].teams[0] = team;
     assignedIndices.push(picked);
     return picked;
@@ -203,7 +204,7 @@ export const drawPot1 = (groups: Group[], pot1Teams: Team[]): Group[] => {
     const rightAvailable = RIGHT_SIDE_INDICES.filter(i => !assignedIndices.includes(i));
     let espSide: 'left' | 'right';
     if (leftAvailable.length > 0 && rightAvailable.length > 0) {
-         espSide = Math.random() < 0.5 ? 'left' : 'right';
+         espSide = random() < 0.5 ? 'left' : 'right';
     } else if (leftAvailable.length > 0) {
         espSide = 'left';
     } else {
@@ -223,7 +224,7 @@ export const drawPot1 = (groups: Group[], pot1Teams: Team[]): Group[] => {
     const rightAvailable = RIGHT_SIDE_INDICES.filter(i => !assignedIndices.includes(i));
     let fraSide: 'left' | 'right';
     if (leftAvailable.length > 0 && rightAvailable.length > 0) {
-         fraSide = Math.random() < 0.5 ? 'left' : 'right';
+         fraSide = random() < 0.5 ? 'left' : 'right';
     } else if (leftAvailable.length > 0) {
         fraSide = 'left';
     } else {
@@ -243,7 +244,7 @@ export const drawPot1 = (groups: Group[], pot1Teams: Team[]): Group[] => {
   const allIndices = [...Array(12).keys()];
   
   const remainingSlots = allIndices.filter(i => !assignedIndices.includes(i));
-  const shuffledOthers = shuffle(remainingTeams);
+  const shuffledOthers = shuffledCopy(remainingTeams, random);
 
   shuffledOthers.forEach((team, idx) => {
       if (idx < remainingSlots.length) {
@@ -259,48 +260,60 @@ export const drawPot1 = (groups: Group[], pot1Teams: Team[]): Group[] => {
 export const drawPot = (
   currentGroups: Group[], 
   potTeams: Team[], 
-  potNumber: 2 | 3 | 4
+  potNumber: 2 | 3 | 4,
+  random: RandomSource = Math.random,
 ): Group[] | null => {
   const trySolve = (attemptsLeft: number): Group[] | null => {
-      const shuffledTeams = [...potTeams].sort(() => Math.random() - 0.5);
+      const shuffledTeams = shuffledCopy(potTeams, random);
+      const groupOrder = shuffledCopy([...Array(12).keys()], random);
       
       // Create a mutable working copy for this attempt
       const workingGroups = cloneGroups(currentGroups);
 
-      const solve = (teamIdx: number): boolean => {
-        if (teamIdx >= shuffledTeams.length) {
-          return true;
-        }
+      const solve = (remainingTeams: Team[]): boolean => {
+        if (remainingTeams.length === 0) return true;
 
-        const team = shuffledTeams[teamIdx];
-        
-        // Optimization: Try groups in order (0-11) or shuffled? 
-        // Random order helps distribution if multiple valid slots exist, preventing bias.
-        // But for performance, static order is faster. 
-        // Given teams are shuffled, static group order is usually acceptable for stats.
-        // Let's keep it 0-11 to be consistent with previous logic, or we can shuffle indices if bias appears.
-        
-        for (let groupIdx = 0; groupIdx < 12; groupIdx++) {
-          const group = workingGroups[groupIdx];
-          const targetPos1Based = APPENDIX_B_POSITIONS[potNumber][groupIdx];
-          const targetPosIndex = targetPos1Based - 1;
+        // Minimum-remaining-values ordering avoids factorial searches in
+        // constrained or impossible states. The initial shuffle still
+        // randomizes ties between equally constrained teams.
+        let chosenTeamIndex = -1;
+        let chosenGroups: number[] = [];
 
-          if (group.teams[targetPosIndex] !== null) continue;
+        for (let teamIdx = 0; teamIdx < remainingTeams.length; teamIdx++) {
+          const candidate = remainingTeams[teamIdx];
+          const validGroups: number[] = [];
 
-          if (canPlaceTeamInGroup(team, group)) {
-            // MUTATE
-            group.teams[targetPosIndex] = team;
+          for (const groupIdx of groupOrder) {
+            const group = workingGroups[groupIdx];
+            const targetPosIndex = APPENDIX_B_POSITIONS[potNumber][groupIdx] - 1;
+            if (group.teams[targetPosIndex] === null && canPlaceTeamInGroup(candidate, group)) {
+              validGroups.push(groupIdx);
+            }
+          }
 
-            if (solve(teamIdx + 1)) return true;
-
-            // BACKTRACK
-            group.teams[targetPosIndex] = null;
+          if (validGroups.length === 0) return false;
+          if (chosenTeamIndex === -1 || validGroups.length < chosenGroups.length) {
+            chosenTeamIndex = teamIdx;
+            chosenGroups = validGroups;
           }
         }
+
+        const chosenTeam = remainingTeams[chosenTeamIndex];
+        const nextTeams = remainingTeams.filter((_, index) => index !== chosenTeamIndex);
+
+        for (const groupIdx of chosenGroups) {
+          const targetPosIndex = APPENDIX_B_POSITIONS[potNumber][groupIdx] - 1;
+          workingGroups[groupIdx].teams[targetPosIndex] = chosenTeam;
+
+          if (solve(nextTeams)) return true;
+
+          workingGroups[groupIdx].teams[targetPosIndex] = null;
+        }
+
         return false;
       };
 
-      if (solve(0)) return workingGroups;
+      if (solve(shuffledTeams)) return workingGroups;
       
       if (attemptsLeft > 0) {
           return trySolve(attemptsLeft - 1);
@@ -312,20 +325,63 @@ export const drawPot = (
 };
 
 const validateFinalDraw = (groups: Group[]): boolean => {
-  for (const group of groups) {
-    // Optimization: Direct loop
-    let uefaCount = 0;
-    for (let i = 0; i < 4; i++) {
-        if (group.teams[i]?.confederation === 'UEFA') uefaCount++;
+  if (groups.length !== GROUP_NAMES.length) return false;
+
+  const expectedIds = new Set(TEAMS.map(team => team.id));
+  const assignedIds = new Set<string>();
+
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+    const group = groups[groupIndex];
+    if (group.name !== GROUP_NAMES[groupIndex] || group.teams.length !== 4) return false;
+
+    const possibleConfeds: string[][] = [];
+    for (let positionIndex = 0; positionIndex < group.teams.length; positionIndex++) {
+      const team = group.teams[positionIndex];
+      if (!team || !expectedIds.has(team.id) || assignedIds.has(team.id)) return false;
+
+      const expectedPot = positionIndex === 0
+        ? 1
+        : ([2, 3, 4] as const).find(
+            pot => APPENDIX_B_POSITIONS[pot][groupIndex] - 1 === positionIndex,
+          );
+      if (team.pot !== expectedPot) return false;
+
+      assignedIds.add(team.id);
+      possibleConfeds.push(getPossibleConfederations(team));
     }
-    
-    if (uefaCount < 1) return false;
-    if (uefaCount > 2) return false;
+
+    const guaranteedUefaCount = possibleConfeds.filter(
+      confeds => confeds.length > 0 && confeds.every(confed => confed === 'UEFA'),
+    ).length;
+    const possibleUefaCount = possibleConfeds.filter(confeds => confeds.includes('UEFA')).length;
+    if (guaranteedUefaCount < 1 || possibleUefaCount > 2) return false;
+
+    for (const confed of ['AFC', 'CAF', 'CONCACAF', 'CONMEBOL', 'OFC']) {
+      if (possibleConfeds.filter(confeds => confeds.includes(confed)).length > 1) return false;
+    }
   }
+
+  if (assignedIds.size !== expectedIds.size) return false;
+  for (const id of expectedIds) {
+    if (!assignedIds.has(id)) return false;
+  }
+
+  for (const [hostId, groupIndex] of Object.entries(HOST_GROUP_INDEX)) {
+    if (groups[groupIndex].teams[0]?.id !== hostId) return false;
+  }
+
+  const leftSide = new Set([3, 4, 5, 6, 7, 8]);
+  const groupIndexFor = (teamId: string): number =>
+    groups.findIndex(group => group.teams.some(team => team?.id === teamId));
+
+  for (const [first, second] of [['ESP', 'ARG'], ['FRA', 'ENG']] as const) {
+    if (leftSide.has(groupIndexFor(first)) === leftSide.has(groupIndexFor(second))) return false;
+  }
+
   return true;
 };
 
-export const simulateFullDraw = (): Group[] => {
+export const simulateFullDraw = (random: RandomSource = Math.random): Group[] => {
   let attempts = 0;
   while (attempts < 100) {
       try {
@@ -335,21 +391,21 @@ export const simulateFullDraw = (): Group[] => {
         const p3 = TEAMS.slice(24, 36);
         const p4 = TEAMS.slice(36, 48);
 
-        groups = drawPot1(groups, p1);
-        let res = drawPot(groups, p2, 2);
+        groups = drawPot1(groups, p1, random);
+        let res = drawPot(groups, p2, 2, random);
         if (!res) throw new Error("Deadlock in Pot 2");
         groups = res;
-        res = drawPot(groups, p3, 3);
+        res = drawPot(groups, p3, 3, random);
         if (!res) throw new Error("Deadlock in Pot 3");
         groups = res;
-        res = drawPot(groups, p4, 4);
+        res = drawPot(groups, p4, 4, random);
         if (!res) throw new Error("Deadlock in Pot 4");
         groups = res;
 
         if (validateFinalDraw(groups)) {
             return groups;
         }
-      } catch (e) {
+      } catch {
           // continue
       }
       attempts++;
@@ -358,91 +414,106 @@ export const simulateFullDraw = (): Group[] => {
 };
 
 
-// New helper: Complete the draw from a given state
 export const completeCurrentDraw = (
   currentGroups: Group[],
-  unplacedTeams: Team[]
+  unplacedTeams: Team[],
+  random: RandomSource = Math.random,
 ): Group[] => {
-  let attempts = 0;
-  // Try 50 times to find a valid completion
-  while (attempts < 50) {
-      try {
-        let groups = cloneGroups(currentGroups);
-        
-        // Group unplaced teams by pot
-        const p1 = unplacedTeams.filter(t => t.pot === 1);
-        const p2 = unplacedTeams.filter(t => t.pot === 2);
-        const p3 = unplacedTeams.filter(t => t.pot === 3);
-        const p4 = unplacedTeams.filter(t => t.pot === 4);
+  const workingGroups = cloneGroups(currentGroups);
+  const remainingByPot = ([1, 2, 3, 4] as const).map(pot => ({
+    pot,
+    teams: unplacedTeams.filter(team => team.pot === pot),
+  }));
 
-        // If Pot 1 has remaining teams, we need to handle them.
-        // drawPot1 is designed for the full pot 1 start.
-        // But if we are partially done, we can use a logic similar to drawPot for Pot 1 or custom logic.
-        // However, drawPot1 uses `newGroups` and `pot1Teams`. 
-        // If we are mid-way, `currentGroups` already has some Pot 1 teams.
-        // The `drawPot1` function as written resets specific slots based on `pot1Teams` logic (e.g. hosts).
-        // It might be safer to use a modified Pot 1 filler or just rely on manual placement logic if Pot 1 is complex.
-        // For simplicity, if we are in Pot 1, let's try to fill it using a similar greedy/random approach as other pots
-        // but Pot 1 has side constraints.
-        
-        if (p1.length > 0) {
-             // For Pot 1 fast-forward, we can try to use the `canPlaceTeamInPot1` check with a simple backtracking or random shuffle
-             // since `drawPot` uses `canPlaceTeamInGroup` which handles Pot 2-4 logic (confeds).
-             // `canPlaceTeamInPot1` handles the complex side logic.
-             
-             // Custom simple solver for Pot 1 remainder:
-             const fillPot1 = (grps: Group[], teams: Team[]): Group[] | null => {
-                 const shuffled = [...teams].sort(() => Math.random() - 0.5);
-                 const solve = (idx: number): boolean => {
-                     if (idx >= shuffled.length) return true;
-                     const team = shuffled[idx];
-                     
-                     // Try all groups
-                     const groupIndices = [...Array(12).keys()].sort(() => Math.random() - 0.5);
-                     
-                     for (const gIdx of groupIndices) {
-                         if (canPlaceTeamInPot1(team, gIdx, grps)) {
-                             grps[gIdx].teams[0] = team;
-                             if (solve(idx + 1)) return true;
-                             grps[gIdx].teams[0] = null;
-                         }
-                     }
-                     return false;
-                 };
-                 if (solve(0)) return grps;
-                 return null;
-             };
-             
-             const res = fillPot1(groups, p1);
-             if (!res) throw new Error("Deadlock in Pot 1 remainder");
-        }
+  const solveLaterPots = (potDataIndex: number): boolean => {
+    if (potDataIndex >= remainingByPot.length) return validateFinalDraw(workingGroups);
 
-        if (p2.length > 0) {
-            const res = drawPot(groups, p2, 2);
-            if (!res) throw new Error("Deadlock in Pot 2");
-            groups = res;
-        }
-        
-        if (p3.length > 0) {
-            const res = drawPot(groups, p3, 3);
-            if (!res) throw new Error("Deadlock in Pot 3");
-            groups = res;
-        }
+    const { pot, teams } = remainingByPot[potDataIndex];
+    if (pot === 1) return solveLaterPots(potDataIndex + 1);
 
-        if (p4.length > 0) {
-            const res = drawPot(groups, p4, 4);
-            if (!res) throw new Error("Deadlock in Pot 4");
-            groups = res;
-        }
+    const availableSlots = GROUP_NAMES.reduce((count, _, groupIndex) => {
+      const positionIndex = APPENDIX_B_POSITIONS[pot][groupIndex] - 1;
+      return count + (workingGroups[groupIndex].teams[positionIndex] === null ? 1 : 0);
+    }, 0);
+    if (availableSlots !== teams.length) return false;
 
-        if (validateFinalDraw(groups)) {
-            return groups;
+    const solveTeams = (remainingTeams: Team[]): boolean => {
+      if (remainingTeams.length === 0) return solveLaterPots(potDataIndex + 1);
+
+      const groupOrder = shuffledCopy([...Array(12).keys()], random);
+      let chosenTeamIndex = -1;
+      let chosenGroups: number[] = [];
+
+      for (let teamIndex = 0; teamIndex < remainingTeams.length; teamIndex++) {
+        const candidate = remainingTeams[teamIndex];
+        const validGroups = groupOrder.filter(groupIndex => {
+          const positionIndex = APPENDIX_B_POSITIONS[pot][groupIndex] - 1;
+          return workingGroups[groupIndex].teams[positionIndex] === null
+            && canPlaceTeamInGroup(candidate, workingGroups[groupIndex]);
+        });
+
+        if (validGroups.length === 0) return false;
+        if (chosenTeamIndex === -1 || validGroups.length < chosenGroups.length) {
+          chosenTeamIndex = teamIndex;
+          chosenGroups = validGroups;
         }
-      } catch (e) {
-          // continue
       }
-      attempts++;
+
+      const chosenTeam = remainingTeams[chosenTeamIndex];
+      const nextTeams = remainingTeams.filter((_, index) => index !== chosenTeamIndex);
+
+      for (const groupIndex of chosenGroups) {
+        const positionIndex = APPENDIX_B_POSITIONS[pot][groupIndex] - 1;
+        workingGroups[groupIndex].teams[positionIndex] = chosenTeam;
+        if (solveTeams(nextTeams)) return true;
+        workingGroups[groupIndex].teams[positionIndex] = null;
+      }
+
+      return false;
+    };
+
+    return solveTeams(shuffledCopy(teams, random));
+  };
+
+  const pot1Teams = remainingByPot[0].teams;
+  const availablePot1Slots = workingGroups.filter(group => group.teams[0] === null).length;
+
+  const solvePot1 = (remainingTeams: Team[]): boolean => {
+    if (remainingTeams.length === 0) return solveLaterPots(1);
+
+    const groupOrder = shuffledCopy([...Array(12).keys()], random);
+    let chosenTeamIndex = -1;
+    let chosenGroups: number[] = [];
+
+    for (let teamIndex = 0; teamIndex < remainingTeams.length; teamIndex++) {
+      const candidate = remainingTeams[teamIndex];
+      const validGroups = groupOrder.filter(groupIndex =>
+        canPlaceTeamInPot1(candidate, groupIndex, workingGroups),
+      );
+
+      if (validGroups.length === 0) return false;
+      if (chosenTeamIndex === -1 || validGroups.length < chosenGroups.length) {
+        chosenTeamIndex = teamIndex;
+        chosenGroups = validGroups;
+      }
+    }
+
+    const chosenTeam = remainingTeams[chosenTeamIndex];
+    const nextTeams = remainingTeams.filter((_, index) => index !== chosenTeamIndex);
+
+    for (const groupIndex of chosenGroups) {
+      workingGroups[groupIndex].teams[0] = chosenTeam;
+      if (solvePot1(nextTeams)) return true;
+      workingGroups[groupIndex].teams[0] = null;
+    }
+
+    return false;
+  };
+
+  if (availablePot1Slots === pot1Teams.length && solvePot1(shuffledCopy(pot1Teams, random))) {
+    return workingGroups;
   }
+
   throw new Error("Could not complete draw from current state");
 };
 

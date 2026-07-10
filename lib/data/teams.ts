@@ -1,8 +1,9 @@
 import { Team, Pot } from '@/types/draw';
 
-// This data mimics the structure described in the prompt.
-// Rankings are hypothetical or based on the prompt's 2025 ranking logic snapshot.
-// Hosts: USA, Mexico, Canada in Pot 1.
+// FIFA final-draw pot snapshot published 25 November 2025, with play-off
+// winners reconciled in this repository on 2 April 2026. The `rank` values
+// preserve pot order; they are not live FIFA ranking positions.
+// Hosts USA, Mexico, and Canada are assigned to Pot 1 by the draw procedure.
 
 export const TEAMS: Team[] = [
   // --- POT 1 ---
@@ -68,7 +69,7 @@ export const TEAMS: Team[] = [
   { 
     id: 'COD', 
     name: 'DR Congo', 
-    confederation: 'FIFA' as any, 
+    confederation: 'FIFA',
     potentialConfederations: ['OFC', 'CONCACAF', 'CAF'], 
     rank: 44,
     pot: 4,
@@ -78,7 +79,7 @@ export const TEAMS: Team[] = [
   { 
     id: 'IRQ', 
     name: 'Iraq', 
-    confederation: 'FIFA' as any, 
+    confederation: 'FIFA',
     potentialConfederations: ['CONMEBOL', 'CONCACAF', 'AFC'],
     rank: 45,
     pot: 4,

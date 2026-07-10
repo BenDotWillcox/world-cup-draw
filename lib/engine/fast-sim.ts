@@ -1,5 +1,6 @@
 import { TEAMS } from '@/lib/data/teams';
-import { Team, GROUP_NAMES } from '@/types/draw';
+import type { RandomSource } from '@/lib/engine/random';
+import { getPossibleConfederations, GROUP_NAMES } from '@/types/draw';
 
 // --- PRE-COMPUTATION ---
 
@@ -26,7 +27,7 @@ interface FastTeam {
 // Pre-process teams into lightweight structures
 const FAST_TEAMS: FastTeam[] = TEAMS.map((t, idx) => {
   let mask = 0;
-  const confeds = t.potentialConfederations || [t.confederation];
+  const confeds = getPossibleConfederations(t);
   
   for (const c of confeds) {
     if (c !== 'UEFA' && CONFED_BITS[c]) {
@@ -68,7 +69,7 @@ const RIGHT_SIDE = [0, 1, 2, 9, 10, 11]; // A-C, J-L
 
 // --- FAST ENGINE ---
 
-export function runFastSimulation(iterations: number) {
+export function runFastSimulation(iterations: number, random: RandomSource = Math.random) {
   // Results Storage (Int Arrays for speed)
   // groupCounts[teamIdx][groupIdx]
   const groupCounts = new Int32Array(TEAMS.length * 12); 
@@ -103,7 +104,7 @@ export function runFastSimulation(iterations: number) {
   // Shuffle helper using Fisher-Yates
   const shuffle = (arr: FastTeam[]) => {
     for (let i = arr.length - 1; i > 0; i--) {
-      const j = (Math.random() * (i + 1)) | 0;
+      const j = (random() * (i + 1)) | 0;
       const temp = arr[i];
       arr[i] = arr[j];
       arr[j] = temp;
@@ -111,6 +112,7 @@ export function runFastSimulation(iterations: number) {
   };
 
   let successCount = 0;
+  let attempts = 0;
 
   // --- MAIN LOOP ---
   
@@ -119,6 +121,7 @@ export function runFastSimulation(iterations: number) {
   // For 10k, this will run in < 200ms.
   
   while (successCount < iterations) {
+    attempts++;
     resetState();
 
     // --- POT 1 (Custom Logic) ---
@@ -157,18 +160,18 @@ export function runFastSimulation(iterations: number) {
       if (idx2 > -1) p1Shuffled.splice(idx2, 1);
 
       // Decide sides
-      const swap = Math.random() < 0.5;
+      const swap = random() < 0.5;
       const side1 = swap ? RIGHT_SIDE : LEFT_SIDE;
       const side2 = swap ? LEFT_SIDE : RIGHT_SIDE;
 
       // Pick slots
       const valid1 = side1.filter(i => !assignedIndices.has(i));
-      const pick1 = valid1[(Math.random() * valid1.length) | 0];
+      const pick1 = valid1[(random() * valid1.length) | 0];
       addToGroup(pick1, t1);
       assignedIndices.add(pick1);
 
       const valid2 = side2.filter(i => !assignedIndices.has(i));
-      const pick2 = valid2[(Math.random() * valid2.length) | 0];
+      const pick2 = valid2[(random() * valid2.length) | 0];
       addToGroup(pick2, t2);
       assignedIndices.add(pick2);
     };
@@ -204,8 +207,9 @@ export function runFastSimulation(iterations: number) {
            // Check constraints
            // UEFA < 2
            if (t.isUefa && groupUefaCounts[gIdx] >= 2) continue;
-           // Other Confed < 1 (Bitmask check)
-           if (!t.isUefa && (groupConfedMasks[gIdx] & t.confedMask) !== 0) continue;
+           // Every possible non-UEFA confederation for a playoff path is
+           // binding, even when that path could also resolve to UEFA.
+           if ((groupConfedMasks[gIdx] & t.confedMask) !== 0) continue;
            
            // Slot is empty? (implicit by groupSizes logic, we just append)
            validGroups.push(gIdx);
@@ -216,11 +220,11 @@ export function runFastSimulation(iterations: number) {
         }
 
         // Pick random
-        const picked = validGroups[(Math.random() * validGroups.length) | 0];
+        const picked = validGroups[(random() * validGroups.length) | 0];
         addToGroup(picked, t);
-        
-        // Remove from available if full (not strictly necessary if we check capacity, but cleaner)
-        // Actually we don't remove from 'groups' array because multiple teams go into different groups.
+
+        // A group receives exactly one team from each pot.
+        groups.splice(groups.indexOf(picked), 1);
       }
       return true;
     };
@@ -228,6 +232,17 @@ export function runFastSimulation(iterations: number) {
     if (!processPot(POT_2)) continue; // Retry Draw
     if (!processPot(POT_3)) continue; // Retry Draw
     if (!processPot(POT_4)) continue; // Retry Draw
+
+    // The procedure requires at least one (and at most two, enforced while
+    // placing) UEFA team in every group.
+    let everyGroupHasUefa = true;
+    for (let g = 0; g < 12; g++) {
+      if (groupUefaCounts[g] < 1) {
+        everyGroupHasUefa = false;
+        break;
+      }
+    }
+    if (!everyGroupHasUefa) continue;
 
     // If we got here, draw is valid
     successCount++;
@@ -280,7 +295,10 @@ export function runFastSimulation(iterations: number) {
 
   return {
     groupProbabilities,
-    opponentCounts: statsOpponentCounts
+    opponentCounts: statsOpponentCounts,
+    iterations,
+    attempts,
+    rejectedIterations: attempts - iterations,
   };
 }
 

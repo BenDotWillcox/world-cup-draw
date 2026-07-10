@@ -6,17 +6,34 @@ export type Confederation =
   | 'AFC' 
   | 'OFC';
 
-export interface Team {
+export type TeamConfederation = Confederation | 'FIFA';
+
+interface TeamBase {
   id: string;
   name: string;
-  confederation: Confederation;
   rank: number;
-  // For placeholders that could be from multiple confederations
-  potentialConfederations?: Confederation[];
   isHost?: boolean;
   pot?: number;
   flagUrl?: string;
 }
+
+export type Team = TeamBase & (
+  | {
+      confederation: Confederation;
+      // Some synthetic/test paths retain a representative confederation.
+      potentialConfederations?: Confederation[];
+    }
+  | {
+      confederation: 'FIFA';
+      // A FIFA playoff placeholder must expose at least one real confederation.
+      potentialConfederations: [Confederation, ...Confederation[]];
+    }
+);
+
+export const getPossibleConfederations = (team: Team): Confederation[] => {
+  if (team.confederation === 'FIFA') return team.potentialConfederations;
+  return team.potentialConfederations ?? [team.confederation];
+};
 
 export interface Pot {
   number: 1 | 2 | 3 | 4;

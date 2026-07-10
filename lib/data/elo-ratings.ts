@@ -1,5 +1,7 @@
-// Elo ratings for 2026 World Cup teams
-// Source: https://www.eloratings.net/ (update before use)
+// Static World Football Elo Ratings capture from 2 April 2026.
+// Source: https://eloratings.net/
+// These third-party inputs are versioned as
+// `world-football-elo-captured-2026-04-02`; they are not fetched live.
 //
 // Host teams (USA, MEX, CAN) get +100 applied at match simulation time,
 // not stored here — these are neutral-venue ratings.

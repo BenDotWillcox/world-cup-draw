@@ -2,7 +2,6 @@
 
 import React from "react";
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from "react-simple-maps";
-import { scaleLinear } from "d3-scale";
 
 const HOST_CITIES = [
   { name: "Vancouver", coordinates: [-123.1207, 49.2827] },

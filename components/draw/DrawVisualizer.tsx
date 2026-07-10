@@ -1,17 +1,37 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useSyncExternalStore } from 'react';
 import { useDrawSimulation } from '@/hooks/use-draw-simulation';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Team } from '@/types/draw';
+import { APPENDIX_B_POSITIONS, Team } from '@/types/draw';
 import { TEAMS } from '@/lib/data/teams';
+import {
+  DRAW_INPUT_VERSION,
+  OFFICIAL_DRAW_VERSION,
+  RULES_VERSION,
+  VISUAL_DRAW_ENGINE_VERSION,
+} from '@/lib/data/simulation-metadata';
+import {
+  createDrawExport,
+  createDrawShareUrl,
+  downloadCsv,
+  downloadJson,
+  drawToCsv,
+} from '@/lib/export-data';
+import {
+  getDrawCenterPrompt,
+  getDrawStatusText,
+  getReturnToPotLabel,
+  isDrawComplete,
+} from '@/lib/draw-ui';
 import { resolvePath } from '@/lib/utils';
 import { cn } from '@/lib/utils';
-import { X, ChevronsRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronsRight, Download, Link2, Loader2, Settings2, X } from 'lucide-react';
 
 export function DrawVisualizer() {
   const { 
@@ -30,11 +50,19 @@ export function DrawVisualizer() {
     fastForward,
     isFastForwarding,
     isOfficialDraw,
-    loadOfficialDraw
+    loadOfficialDraw,
+    seed,
+    setSeed,
   } = useDrawSimulation();
 
   const [draggingTeam, setDraggingTeam] = useState<Team | null>(null);
   const [validTargetIndices, setValidTargetIndices] = useState<number[]>([]);
+  const [shareStatus, setShareStatus] = useState('');
+  const sharedVersionWarning = useSyncExternalStore(
+    subscribeToConfiguration,
+    getSharedVersionWarning,
+    getServerSharedVersionWarning,
+  );
 
   // We start with all TEAMS.
   // Filter out teams that are in the `groups` state.
@@ -50,6 +78,49 @@ export function DrawVisualizer() {
     
     return ids;
   }, [groups, currentTeam]);
+
+  const isComplete = useMemo(() => isDrawComplete(groups), [groups]);
+
+  const statusText = getDrawStatusText({
+    isOfficialDraw,
+    isComplete,
+    isRunning,
+    currentPot,
+  });
+
+  const shareConfiguration = async () => {
+    const normalizedSeed = seed.trim();
+    if (!isOfficialDraw && !normalizedSeed) {
+      setShareStatus('Enter a seed before sharing.');
+      return;
+    }
+
+    const url = createDrawShareUrl(
+      window.location.href,
+      normalizedSeed,
+      isOfficialDraw ? 'official' : 'seeded',
+    );
+
+    window.history.replaceState(null, '', url);
+    window.dispatchEvent(new Event('world-cup-configuration-change'));
+
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      setShareStatus('Configuration link copied.');
+    } catch {
+      setShareStatus('Could not copy automatically; copy the current page URL.');
+    }
+  };
+
+  const exportDrawJson = () => {
+    const scenario = isOfficialDraw ? 'official-draw' : 'visual-seeded-draw';
+    downloadJson('world-cup-2026-draw.json', createDrawExport(groups, seed, scenario));
+  };
+
+  const exportDrawCsv = () => {
+    const scenario = isOfficialDraw ? 'official-draw' : 'visual-seeded-draw';
+    downloadCsv('world-cup-2026-draw.csv', drawToCsv(groups, seed, scenario));
+  };
 
   // Determine if team is a placeholder
   const isPlaceholder = (team: Team) => !team.flagUrl;
@@ -123,9 +194,7 @@ export function DrawVisualizer() {
         <div className="space-y-1 w-full md:w-1/3">
             <h2 className="text-2xl font-bold">Draw Simulator</h2>
             <p className="text-muted-foreground text-sm">
-              {isRunning 
-                ? `Drawing Pot ${currentPot}` 
-                : "Ready to Start"}
+              {statusText}
             </p>
         </div>
 
@@ -145,7 +214,7 @@ export function DrawVisualizer() {
                 </div>
             ) : (
                 <div className="text-muted-foreground/20 text-xs font-medium uppercase tracking-widest select-none">
-                    {draggingTeam ? "Drop to Place" : "Waiting for Draw"}
+                    {getDrawCenterPrompt(draggingTeam, isComplete)}
                 </div>
             )}
         </div>
@@ -172,13 +241,15 @@ export function DrawVisualizer() {
             </div>
           )}
 
-          {!isRunning && !isOfficialDraw ? (
-            <Button onClick={startDraw}>Start Simulation</Button>
-          ) : isOfficialDraw ? (
+          {isOfficialDraw ? (
              <Button variant="outline" onClick={reset}>Reset</Button>
+          ) : isComplete ? (
+             <Button variant="destructive" onClick={reset}>Restart</Button>
+          ) : !isRunning ? (
+            <Button onClick={startDraw}>Start Simulation</Button>
           ) : (
             <>
-                {/* Only show Draw/Advance button if not finished with Pot 4 */}
+                {/* Only show Draw/Advance buttons while the draw is incomplete. */}
                 {(currentPot < 4 || TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length > 0) && (
                     <>
                         <Button onClick={nextStep} disabled={!!currentTeam || !!draggingTeam}>
@@ -201,11 +272,6 @@ export function DrawVisualizer() {
                         </Button>
                     </>
                 )}
-                
-                {/* If finished with Pot 4, show a status or just the Restart button */}
-                {currentPot === 4 && TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length === 0 && (
-                     <div className="text-sm font-medium text-muted-foreground mr-2">Draw Complete</div>
-                )}
 
                 <Button variant="destructive" onClick={reset}>Restart</Button>
             </>
@@ -213,10 +279,10 @@ export function DrawVisualizer() {
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6 items-start">
+      <div className="flex flex-col lg:flex-row gap-6 items-start" data-testid="draw-board">
         
         {/* LEFT SIDEBAR: Active Pot */}
-        {(currentPot < 4 || TEAMS.filter(t => t.pot === currentPot && !drawnTeamIds.has(t.id)).length > 0) && !isOfficialDraw ? (
+        {!isComplete && !isOfficialDraw ? (
             <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 sticky top-4 z-20">
                 {isRunning ? (
                     <div className="border rounded-xl p-4 bg-card shadow-md ring-2 ring-primary/10">
@@ -275,10 +341,6 @@ export function DrawVisualizer() {
         {/* RIGHT CONTENT: Groups Grid */}
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
             {groups.map((group, groupIndex) => {
-            const teamsByPot: (Team | null)[] = [1, 2, 3, 4].map(potNum => 
-                group.teams.find(t => t?.pot === potNum) || null
-            );
-
             const isValidTarget = draggingTeam && validTargetIndices.includes(groupIndex);
             
             return (
@@ -300,14 +362,16 @@ export function DrawVisualizer() {
                 </CardHeader>
                 <CardContent className="p-0">
                     <div className="divide-y">
-                    {teamsByPot.map((team, idx) => {
+                    {group.teams.map((team, idx) => {
                         let displayTeam = team;
                         let rowClass = "";
                         
                         // Handle scanning visualization
                         if (scanningGroupIndex === groupIndex && currentTeam && scanningStatus) {
                             const potNum = currentTeam.pot || 1;
-                            const targetSlot = potNum - 1;
+                            const targetSlot = potNum === 1
+                              ? 0
+                              : APPENDIX_B_POSITIONS[potNum][groupIndex] - 1;
 
                             if (idx === targetSlot) {
                                 if (scanningStatus === 'rejected') {
@@ -321,7 +385,8 @@ export function DrawVisualizer() {
                         }
 
                         // Determine if this team can be removed (simulation is running)
-                        const canRemove = isRunning && displayTeam;
+                        const assignedTeam = team;
+                        const canRemove = isRunning && assignedTeam && !currentTeam && !isFastForwarding;
 
                         return (
                         <div key={idx} className={`flex items-center justify-between p-3 h-12 text-xs transition-colors duration-200 ${rowClass} group/item`}>
@@ -337,11 +402,13 @@ export function DrawVisualizer() {
                                     <span className="font-bold text-sm truncate">{displayTeam.name}</span>
                                     <span className="text-[10px] text-muted-foreground mt-0.5">{displayTeam.confederation}</span>
                                 </div>
-                                {canRemove && (
+                                {canRemove && assignedTeam && (
                                     <button
-                                        onClick={() => removeTeam(displayTeam!, groupIndex)}
-                                        className="ml-auto opacity-0 group-hover/item:opacity-100 hover:bg-red-100 p-1 rounded-full transition-all text-red-500"
-                                        title="Return to Pot"
+                                        type="button"
+                                        onClick={() => removeTeam(assignedTeam, groupIndex)}
+                                        className="ml-auto opacity-0 group-hover/item:opacity-100 focus-visible:opacity-100 hover:bg-red-100 p-1 rounded-full transition-all text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                                        aria-label={getReturnToPotLabel(assignedTeam, group.name, idx + 1)}
+                                        title={getReturnToPotLabel(assignedTeam, group.name, idx + 1)}
                                     >
                                         <X size={14} />
                                     </button>
@@ -363,6 +430,94 @@ export function DrawVisualizer() {
         </div>
 
       </div>
+
+      <div className="space-y-3 rounded-lg border bg-card p-4 shadow-sm" data-testid="draw-secondary-actions">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+            <Button className="w-full sm:w-auto" type="button" variant="outline" onClick={shareConfiguration} disabled={!isOfficialDraw && !seed.trim()}>
+              <Link2 className="size-4" /> Share configuration
+            </Button>
+            <Button className="w-full sm:w-auto" type="button" variant="outline" onClick={exportDrawCsv} disabled={!isOfficialDraw && !seed.trim()}>
+              <Download className="size-4" /> Draw CSV
+            </Button>
+            <Button className="w-full sm:w-auto" type="button" variant="outline" onClick={exportDrawJson} disabled={!isOfficialDraw && !seed.trim()}>
+              <Download className="size-4" /> Draw JSON
+            </Button>
+          </div>
+          <p className="min-h-5 text-xs text-muted-foreground" role="status" aria-live="polite">
+            {shareStatus}
+          </p>
+        </div>
+
+        {sharedVersionWarning && (
+          <p className="text-xs font-medium text-amber-700 dark:text-amber-300" role="alert">
+            {sharedVersionWarning}
+          </p>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          Share saves the setup; export saves this exact draw.
+        </p>
+
+        <details className="group border-t">
+          <summary className="flex min-h-11 w-full cursor-pointer list-none items-center justify-between gap-3 rounded-md py-3 text-left text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center gap-2">
+              <Settings2 className="size-4 text-muted-foreground" aria-hidden="true" />
+              Advanced draw settings
+              <span className="font-normal text-muted-foreground">Optional replay seed</span>
+            </span>
+            <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+          </summary>
+          <div className="mt-3 max-w-xl space-y-1 rounded-md bg-muted/30 p-3">
+            <Label htmlFor="draw-seed">Optional replay seed</Label>
+            <Input
+              id="draw-seed"
+              value={seed}
+              onChange={event => setSeed(event.target.value)}
+              disabled={isRunning || isOfficialDraw}
+              maxLength={128}
+              placeholder="Leave blank for a new random draw"
+              spellCheck={false}
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave this blank for a fresh draw each time. Enter a seed only when you want to replay the same random sequence.
+            </p>
+          </div>
+        </details>
+      </div>
     </div>
   );
+}
+
+function subscribeToConfiguration(onStoreChange: () => void) {
+  window.addEventListener('popstate', onStoreChange);
+  window.addEventListener('world-cup-configuration-change', onStoreChange);
+  return () => {
+    window.removeEventListener('popstate', onStoreChange);
+    window.removeEventListener('world-cup-configuration-change', onStoreChange);
+  };
+}
+
+function getSharedVersionWarning() {
+  const params = new URLSearchParams(window.location.search);
+  const sharedRules = params.get('rules');
+  const sharedInput = params.get('input');
+  const sharedEngine = params.get('engine');
+  const sharedScenario = params.get('scenario') === 'official' ? 'official' : 'seeded';
+  const expectedInput = sharedScenario === 'official' ? OFFICIAL_DRAW_VERSION : DRAW_INPUT_VERSION;
+  const mismatches = [
+    sharedRules && sharedRules !== RULES_VERSION ? `rules ${sharedRules}` : null,
+    sharedInput && sharedInput !== expectedInput ? `input ${sharedInput}` : null,
+    sharedScenario === 'seeded' && sharedEngine && sharedEngine !== VISUAL_DRAW_ENGINE_VERSION
+      ? `engine ${sharedEngine}`
+      : null,
+  ].filter(Boolean);
+
+  return mismatches.length > 0
+    ? `This link targets a different ${mismatches.join(' and ')} snapshot; the current app cannot reproduce it exactly.`
+    : '';
+}
+
+function getServerSharedVersionWarning() {
+  return '';
 }

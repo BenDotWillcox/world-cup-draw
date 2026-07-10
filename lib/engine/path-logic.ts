@@ -6,7 +6,7 @@ import { HOST_CITIES } from '@/lib/data/venues';
 import { haversineDistance } from '@/lib/utils';
 import precomputedStats from '@/lib/data/monte-carlo-results.json';
 
-const ITERATIONS = 1000000;
+const ITERATIONS = precomputedStats.iterations;
 const ALL_MATCHES: Match[] = [...MATCH_SCHEDULE, ...KNOCKOUT_SCHEDULE];
 
 // Types for opponent resolution
@@ -43,6 +43,8 @@ export interface BracketOpponent {
   flagUrl?: string;
   entryPath: string; // e.g., "1G", "3rd (Group E)"
   probability?: number; // 0-100, from tournament sim (conditional on reaching this round)
+  probabilityCount?: number;
+  probabilityTrials?: number;
 }
 
 export interface BracketPathNode {
@@ -701,6 +703,8 @@ export function enrichPathWithProbabilities(
         return {
           ...opp,
           probability: (count / totalMatchCount) * 100,
+          probabilityCount: count,
+          probabilityTrials: totalMatchCount,
         };
       })
       .filter(opp => opp.probability > 0.1) // Remove near-zero
@@ -709,4 +713,3 @@ export function enrichPathWithProbabilities(
     return { ...node, opponents: enriched };
   });
 }
-

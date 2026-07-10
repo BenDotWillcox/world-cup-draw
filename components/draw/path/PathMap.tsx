@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState } from "react";
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup, Line } from "react-simple-maps";
 import { HOST_CITIES } from "@/lib/data/venues";
 import {
@@ -11,6 +11,17 @@ import {
 import { PATH_COLORS } from "./PathLegend";
 
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+
+const DEFAULT_CENTER: [number, number] = [-96, 40];
+const DEFAULT_ZOOM = 1;
+const ZOOMED_ZOOM = 3;
+
+interface MapView {
+  selectionKey: string | null;
+  center: [number, number];
+  zoom: number;
+  userPanned: boolean;
+}
 
 interface PathSegment {
   key: string;
@@ -32,7 +43,6 @@ interface PathStop {
 }
 
 interface PathMapProps {
-  selectedTeamId: string;
   selectedGroup: string;
   selectedPos: number;
   firstPath: BracketPathNode[];
@@ -91,7 +101,6 @@ function buildPathSegments(
 }
 
 export function PathMap({
-  selectedTeamId,
   selectedGroup,
   selectedPos,
   firstPath,
@@ -164,8 +173,14 @@ export function PathMap({
     return { thirdSegs: [], thirdStops: [] };
   }, [thirdPath, expandedThirdPlaceMatchId, lastGroupCoords]);
 
-  const allSegments = [...groupSegments, ...firstSegs, ...secondSegs, ...thirdSegs];
-  const allStops = [...groupStops, ...firstStops, ...secondStops, ...thirdStops];
+  const allSegments = useMemo(
+    () => [...groupSegments, ...firstSegs, ...secondSegs, ...thirdSegs],
+    [groupSegments, firstSegs, secondSegs, thirdSegs],
+  );
+  const allStops = useMemo(
+    () => [...groupStops, ...firstStops, ...secondStops, ...thirdStops],
+    [groupStops, firstStops, secondStops, thirdStops],
+  );
 
   function getOpacity(pos: 1 | 2 | 3 | "group") {
     if (pos === "group") return showGroupStage ? 0.9 : 0;
@@ -211,15 +226,6 @@ export function PathMap({
     return offsets;
   }, [allStops, showGroupStage, highlightedPosition]);
 
-  // Zoom-to-city logic
-  const DEFAULT_CENTER: [number, number] = [-96, 40];
-  const DEFAULT_ZOOM = 1;
-  const ZOOMED_ZOOM = 3;
-
-  const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
-  const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
-  const userPannedRef = useRef(false);
-
   // Find coords for the selected stop
   const selectedStopCoords = useMemo(() => {
     if (!selectedStop) return null;
@@ -227,23 +233,44 @@ export function PathMap({
     return stop?.coords ?? null;
   }, [selectedStop, allStops]);
 
-  useEffect(() => {
-    if (selectedStopCoords) {
-      userPannedRef.current = false;
-      setMapCenter(selectedStopCoords);
-      setMapZoom(ZOOMED_ZOOM);
-    } else {
-      if (!userPannedRef.current) {
-        setMapCenter(DEFAULT_CENTER);
-        setMapZoom(DEFAULT_ZOOM);
-      }
-    }
-  }, [selectedStopCoords]);
+  // Treat a prop-driven selection change as a guarded state adjustment. This
+  // avoids an effect-driven extra render while retaining a user-panned view
+  // when a selected stop is cleared.
+  const selectionKey = selectedStopCoords
+    ? `${selectedStop}:${selectedStopCoords[0]},${selectedStopCoords[1]}`
+    : null;
+  const [mapView, setMapView] = useState<MapView>({
+    selectionKey,
+    center: selectedStopCoords ?? DEFAULT_CENTER,
+    zoom: selectedStopCoords ? ZOOMED_ZOOM : DEFAULT_ZOOM,
+    userPanned: false,
+  });
+
+  let activeMapView = mapView;
+  if (mapView.selectionKey !== selectionKey) {
+    activeMapView = selectedStopCoords
+      ? {
+          selectionKey,
+          center: selectedStopCoords,
+          zoom: ZOOMED_ZOOM,
+          userPanned: false,
+        }
+      : {
+          ...mapView,
+          selectionKey: null,
+          center: mapView.userPanned ? mapView.center : DEFAULT_CENTER,
+          zoom: mapView.userPanned ? mapView.zoom : DEFAULT_ZOOM,
+        };
+    setMapView(activeMapView);
+  }
 
   const handleMoveEnd = (position: { coordinates: [number, number]; zoom: number }) => {
-    userPannedRef.current = true;
-    setMapCenter(position.coordinates);
-    setMapZoom(position.zoom);
+    setMapView(current => ({
+      ...current,
+      center: position.coordinates,
+      zoom: position.zoom,
+      userPanned: true,
+    }));
   };
 
   return (
@@ -258,8 +285,8 @@ export function PathMap({
         className="w-full h-full"
       >
         <ZoomableGroup
-          center={mapCenter}
-          zoom={mapZoom}
+          center={activeMapView.center}
+          zoom={activeMapView.zoom}
           minZoom={0.5}
           maxZoom={4}
           onMoveEnd={handleMoveEnd}

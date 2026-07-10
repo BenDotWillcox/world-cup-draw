@@ -1,4 +1,5 @@
 import { ELO_RATINGS, HOST_TEAM_IDS, HOST_ELO_BONUS } from '@/lib/data/elo-ratings';
+import type { RandomSource } from '@/lib/engine/random';
 
 /**
  * Elo-based match outcome probabilities for FIFA World Cup simulation.
@@ -57,9 +58,10 @@ export function simulateGroupMatch(
   teamBId: string,
   teamAHome: boolean = false,
   teamBHome: boolean = false,
+  random: RandomSource = Math.random,
 ): 'A' | 'D' | 'B' {
   const [pWinA, pDraw] = matchProbabilities(teamAId, teamBId, teamAHome, teamBHome);
-  const r = Math.random();
+  const r = random();
 
   if (r < pWinA) return 'A';
   if (r < pWinA + pDraw) return 'D';
@@ -77,10 +79,11 @@ export function simulateKnockoutMatch(
   teamBId: string,
   teamAHome: boolean = false,
   teamBHome: boolean = false,
+  random: RandomSource = Math.random,
 ): 'A' | 'B' {
   const rA = getEffectiveElo(teamAId, teamAHome);
   const rB = getEffectiveElo(teamBId, teamBHome);
 
   const pWinA = 1 / (1 + Math.pow(10, (rB - rA) / 400));
-  return Math.random() < pWinA ? 'A' : 'B';
+  return random() < pWinA ? 'A' : 'B';
 }

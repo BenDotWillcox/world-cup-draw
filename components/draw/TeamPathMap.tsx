@@ -29,6 +29,8 @@ import { TravelStatsBar } from "./path/TravelStatsBar";
 import { PathLegend } from "./path/PathLegend";
 import { PATH_COLORS } from "./path/PathLegend";
 
+const SORTED_TEAMS = [...TEAMS].sort((a, b) => a.name.localeCompare(b.name));
+
 export function TeamPathMap() {
   const [selectedTeamId, setSelectedTeamId] = useState<string>("USA");
   const [highlightedPosition, setHighlightedPosition] = useState<1 | 2 | 3 | null>(null);
@@ -36,7 +38,6 @@ export function TeamPathMap() {
   const [selectedStopPosition, setSelectedStopPosition] = useState<1 | 2 | 3 | "group">("group");
   const [expandedThirdPlaceMatchId, setExpandedThirdPlaceMatchId] = useState<string | null>(null);
   const [hoveredBracketMatch, setHoveredBracketMatch] = useState<string | null>(null);
-  const [showThirdPlaceOptions, setShowThirdPlaceOptions] = useState(false);
   const [showGroupStage, setShowGroupStage] = useState(true);
 
   // Derive group and position from selected team
@@ -105,7 +106,6 @@ export function TeamPathMap() {
     setHighlightedPosition(null);
     setSelectedStop(null);
     setExpandedThirdPlaceMatchId(null);
-    setShowThirdPlaceOptions(false);
   }
 
   const handlePositionToggle = useCallback((pos: 1 | 2 | 3) => {
@@ -114,14 +114,10 @@ export function TeamPathMap() {
         // Toggling off
         if (pos === 3) {
           setExpandedThirdPlaceMatchId(null);
-          setShowThirdPlaceOptions(false);
         }
         return null;
       }
       // Toggling on
-      if (pos === 3) {
-        setShowThirdPlaceOptions(true);
-      }
       return pos;
     });
     setSelectedStop(null);
@@ -149,7 +145,6 @@ export function TeamPathMap() {
 
   const handleExpandThirdPlace = useCallback((matchId: string) => {
     setExpandedThirdPlaceMatchId(matchId);
-    setShowThirdPlaceOptions(false);
     setHighlightedPosition(3);
   }, []);
 
@@ -180,7 +175,10 @@ export function TeamPathMap() {
       <CardHeader>
         <CardTitle>Team Path Visualizer</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Select a team to visualize their World Cup path.
+          Fixed official-draw reference view: paths use the checked-in official groups and schedule and never use the assignment in Visual Draw. Opponent probabilities are documented in the Methodology, reproducibility &amp; uncertainty section at the bottom of Stats (Reference).
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Select a team to explore its possible World Cup path.
         </p>
       </CardHeader>
 
@@ -193,7 +191,7 @@ export function TeamPathMap() {
                 <SelectValue placeholder="Select Team" />
               </SelectTrigger>
               <SelectContent>
-                {TEAMS.sort((a, b) => a.name.localeCompare(b.name)).map((t) => (
+                {SORTED_TEAMS.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     <div className="flex items-center gap-2">
                       <img src={resolvePath(t.flagUrl)} alt={t.id} className="w-5 h-3 object-cover border" />
@@ -275,7 +273,6 @@ export function TeamPathMap() {
           <div className="flex-[3] min-w-0">
             <div className="relative h-[500px] border rounded-lg bg-blue-50 overflow-hidden">
               <PathMap
-                selectedTeamId={selectedTeamId}
                 selectedGroup={selectedGroup}
                 selectedPos={selectedPos}
                 firstPath={firstPath}

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { type BracketOpponent } from "@/lib/engine/path-logic";
+import { formatEstimateTitle, getBinomialEstimate } from "@/lib/statistics/uncertainty";
 import { resolvePath } from "@/lib/utils";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
@@ -23,8 +24,23 @@ export function OpponentList({ opponents, maxVisible = 8 }: OpponentListProps) {
 
   return (
     <div className="space-y-1.5">
-      {visible.map((opp) => (
-        <div key={opp.teamId} className="flex items-center gap-2">
+      {visible.map((opp) => {
+        const hasEstimate = opp.probabilityCount != null && opp.probabilityTrials != null;
+        const estimate = hasEstimate
+          ? getBinomialEstimate(opp.probabilityCount!, opp.probabilityTrials!)
+          : null;
+        const estimateTitle = hasEstimate
+          ? formatEstimateTitle(opp.probabilityCount!, opp.probabilityTrials!)
+          : undefined;
+
+        return (
+        <div
+          key={opp.teamId}
+          className="flex items-start gap-2"
+          title={estimateTitle}
+          aria-label={estimateTitle ? `${opp.teamName}: ${estimateTitle}` : undefined}
+          tabIndex={estimateTitle ? 0 : undefined}
+        >
           {opp.flagUrl && (
             <img
               src={resolvePath(opp.flagUrl)}
@@ -32,16 +48,24 @@ export function OpponentList({ opponents, maxVisible = 8 }: OpponentListProps) {
               className="w-6 h-4 object-cover rounded border shadow-sm flex-shrink-0"
             />
           )}
-          <span className="text-sm font-medium truncate">{opp.teamName}</span>
+          <span className="text-sm font-medium truncate pt-0.5">{opp.teamName}</span>
           {hasProbabilities && opp.probability != null ? (
-            <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 ml-auto shrink-0">
-              {opp.probability.toFixed(1)}%
+            <span className="ml-auto flex shrink-0 flex-col items-end">
+              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                {opp.probability.toFixed(1)}%
+              </span>
+              {estimate && opp.probabilityTrials != null && (
+                <span className="text-[10px] leading-tight text-muted-foreground">
+                  95% CI {estimate.confidenceInterval95.lowPercentage.toFixed(1)}–{estimate.confidenceInterval95.highPercentage.toFixed(1)}% · n={opp.probabilityTrials.toLocaleString()}
+                </span>
+              )}
             </span>
           ) : (
             <span className="text-xs text-muted-foreground truncate ml-auto">{opp.entryPath}</span>
           )}
         </div>
-      ))}
+        );
+      })}
       {hasMore && (
         <button
           onClick={() => setExpanded(!expanded)}
