@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -16,6 +15,7 @@ import {
   type SimulationKind,
   type SimulationMetadata,
 } from '../lib/data/simulation-metadata';
+import { hashInputFiles } from '../lib/input-snapshot';
 import { getWorstCaseUncertainty } from '../lib/statistics/uncertainty';
 
 export interface GeneratorArguments {
@@ -189,17 +189,6 @@ export function writeJson(relativePath: string, value: unknown) {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, `${JSON.stringify(value, null, 2)}\n`);
   return outputPath;
-}
-
-function hashInputFiles(relativePaths: string[]): string {
-  const hash = crypto.createHash('sha256');
-  for (const relativePath of [...relativePaths].sort()) {
-    hash.update(relativePath.replaceAll('\\', '/'));
-    hash.update('\0');
-    hash.update(fs.readFileSync(path.join(process.cwd(), relativePath)));
-    hash.update('\0');
-  }
-  return hash.digest('hex');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

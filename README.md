@@ -68,7 +68,7 @@ Key implementation areas:
 
 ## Source and version provenance
 
-All application inputs are static snapshots, not live feeds. Version identifiers live in [`lib/data/simulation-metadata.ts`](lib/data/simulation-metadata.ts), and generated artifacts include the relevant identifiers plus a SHA-256 hash and file list for the exact input snapshot.
+All application inputs are static snapshots, not live feeds. Version identifiers live in [`lib/data/simulation-metadata.ts`](lib/data/simulation-metadata.ts), and generated artifacts include the relevant identifiers plus a SHA-256 hash and file list for the exact input snapshot. Source text is normalized to LF before hashing so the same snapshot has one digest on Windows and Linux.
 
 | Input | Repository version | Primary source / capture note |
 | --- | --- | --- |

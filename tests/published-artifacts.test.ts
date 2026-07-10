@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
 import { test } from 'node:test';
 import preDrawJson from '@/lib/data/pre-draw-monte-carlo.json';
 import preDrawCompatibilityJson from '@/lib/data/monte-carlo-results.json';
 import tournamentJson from '@/lib/data/tournament-sim-results.json';
 import { SIMULATION_SCHEMA_VERSION, type SimulationMetadata } from '@/lib/data/simulation-metadata';
 import { TEAMS } from '@/lib/data/teams';
+import { hashInputFiles } from '@/lib/input-snapshot';
 
 interface CountedArtifact {
   metadata: SimulationMetadata;
@@ -76,17 +74,6 @@ function validateMetadata(artifact: CountedArtifact) {
   assert.ok(metadata.rulesSource.startsWith('https://'));
   assert.ok(Number.isFinite(metadata.convergence.maxAbsoluteDeltaPercentagePoints));
   assert.equal(metadata.convergence.passed, true);
-}
-
-function hashInputFiles(relativePaths: string[]): string {
-  const hash = createHash('sha256');
-  for (const relativePath of [...relativePaths].sort()) {
-    hash.update(relativePath.replaceAll('\\', '/'));
-    hash.update('\0');
-    hash.update(fs.readFileSync(path.join(process.cwd(), relativePath)));
-    hash.update('\0');
-  }
-  return hash.digest('hex');
 }
 
 function sum(values: number[]) {

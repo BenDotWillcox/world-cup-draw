@@ -15,7 +15,7 @@
     "modelVersion": "elo-points-annexe-c-v2",
     "inputSnapshot": {
       "version": "fifa-final-draw-2025-12-05-reconciled-2026-04-02",
-      "sha256": "04513c7fb06acd63cfbbdc9540bab3418c5baf6452c3eb131487083288a5ae6d",
+      "sha256": "d101626d2553f3a7b3447c6b196c5ea090713f7560d1aba60e2a6e56b74c7970",
       "files": [
         "lib/data/elo-ratings.ts",
         "lib/data/knockout-schedule.ts",

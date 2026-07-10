@@ -14,7 +14,7 @@
     "rulesSource": "https://digitalhub.fifa.com/m/2d1a1ac7bab78995/original/Draw-Procedures-for-the-FIFA-World-Cup-2026.pdf",
     "inputSnapshot": {
       "version": "fifa-pots-2025-11-19-reconciled-2026-04-02",
-      "sha256": "2f124a5bbe445d827146d02a082a4fb06fc7bf7b4dd25a0e53ed5dc4620060e9",
+      "sha256": "2894db557ac68ed9d92c6995efa3e33676c33795de2e3df4fc98783133f2b16b",
       "files": [
         "lib/data/teams.ts",
         "lib/engine/fast-sim.ts",
