@@ -8,11 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --test tests/draw-engine.test.ts tests/draw-ui.test.ts tests/export-data.test.ts tests/golden-simulation.test.ts tests/input-snapshot.test.ts tests/path-probabilities.test.ts tests/published-artifacts.test.ts tests/random-seed.test.ts tests/simulation-reporting.test.ts tests/third-place-combinations.test.ts tests/uncertainty.test.ts",
     "test:invariants": "tsx --test tests/draw-engine.test.ts",
     "test:golden": "tsx --test tests/golden-simulation.test.ts",
     "test:artifacts": "tsx --test tests/published-artifacts.test.ts",
-    "test:coverage": "tsx --test --experimental-test-coverage tests/**/*.test.ts",
+    "test:coverage": "tsx --test --experimental-test-coverage tests/draw-engine.test.ts tests/draw-ui.test.ts tests/export-data.test.ts tests/golden-simulation.test.ts tests/input-snapshot.test.ts tests/path-probabilities.test.ts tests/published-artifacts.test.ts tests/random-seed.test.ts tests/simulation-reporting.test.ts tests/third-place-combinations.test.ts tests/uncertainty.test.ts",
     "check": "npm run lint && npm run typecheck && npm test && npm run test:golden && npm run test:artifacts",
     "generate:draw-stats": "npx tsx scripts/generate-stats.ts",
     "generate:tournament-stats": "npx tsx scripts/generate-tournament-stats.ts"
